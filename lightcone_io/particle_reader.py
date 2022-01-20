@@ -229,46 +229,6 @@ class IndexedLightconeParticleType:
         # Read the data
         return self.read_cells(property_names, cells_to_read)
 
-    def iterate(self, property_names, vector=None, radius=None, redshift_range=None):
-        
-        if redshift_range is not None:
-            # Get redshift range to read
-            redshift_min, redshift_max = [float(r) for r in redshift_range]
-        else:
-            # Read all redshifts
-            redshift_min = self.index["redshift_bins"][0]
-            redshift_max = self.index["redshift_bins"][-1]
-
-        if vector is not None:
-            # Select specified location on the sky
-            if radius is None:
-                raise ValueError("If specifying a radius must specify line of sight vector too")
-            radius = float(radius)
-            vector = np.asarray(vector, dtype=float)
-        else:
-            # Select full sky
-            vector = np.asarray((1,0,0), dtype=float)
-            radius = 2*np.pi
-
-        # Find which redshift and healpix bins we should read in
-        healpix_bins  = self.get_pixels_in_radius(vector, radius)
-        redshift_bins = self.get_redshift_bins_in_range(redshift_min, redshift_max)
-        cells_to_read = self.get_cell_indexes(redshift_bins, healpix_bins)
-
-        # Return chunks of particles
-        cells_per_chunk = 10
-        for cell_nr in range(0, len(cells_to_read), cells_per_chunk):
-
-            # Find range of cells to read
-            i1 = cell_nr
-            i2 = i1 + cells_per_chunk
-            if i2 > len(cells_to_read):
-                i2 = len(cells_to_read)
-
-            # Read the cells
-            data = self.read_cells(property_names, cells_to_read(i1:i2))
-            
-            yield data
 
 class IndexedLightcone(collections.abc.Mapping):
     """
