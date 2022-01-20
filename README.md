@@ -100,4 +100,9 @@ redshift_range = (0., 1.0)
 data = lightcone["DM"].read(property_names, vector, radius, redshift_range)
 ```
 The return value is a dictionary containing the quantities read in - in this
-case Coordinates and ParticleIDs.
+case Coordinates and ParticleIDs. If redshift_range=None then all redshifts
+are read in. If vector=None and radius=None then the whole sky is read in.
+
+Note that this may return particles outside the specified region because the
+indexed lightcone is stored in chunks and all chunks overlapping the region
+are returned.
