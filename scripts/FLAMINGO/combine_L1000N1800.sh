@@ -6,7 +6,7 @@
 #SBATCH -o ./logs/L1000N1800/%x.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
-#SBATCH -t 72:00:00
+#SBATCH -t 12:00:00
 #
 
 module purge
@@ -20,5 +20,8 @@ output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones/
 
 nr_lightcones=2
 
-mpirun python3 -m mpi4py lightcone_io_combine_maps.py \
+# Assume script is in $PATH
+script=`which lightcone_io_combine_maps.py`
+
+mpirun python3 -m mpi4py ${script} \
     ${input_dir} ${nr_lightcones} ${output_dir}  

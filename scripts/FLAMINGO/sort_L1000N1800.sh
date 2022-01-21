@@ -6,7 +6,6 @@
 #SBATCH -o ./logs/L1000N1800/index_%x.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
-#SBATCH --exclusive
 #SBATCH -t 72:00:00
 #
 
@@ -28,6 +27,8 @@ nside=32
 # Output directory
 outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/${name}/lightcones/
 
-mpirun python3 -u -m mpi4py ./lightcone_io_index_particles.py \
-    ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${outdir}
+# Assume script is in $PATH
+script=`which lightcone_io_index_particles.py`
 
+mpirun python3 -u -m mpi4py ./${script} \
+    ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${outdir}
