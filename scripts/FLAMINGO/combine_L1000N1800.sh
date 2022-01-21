@@ -20,6 +20,5 @@ output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones/
 
 nr_lightcones=2
 
-mpirun python3 -m mpi4py \
-    ~/Codes/Flamingo/combine_healpix/combine_maps_mpi.py \
+mpirun python3 -m mpi4py lightcone_io_combine_maps.py \
     ${input_dir} ${nr_lightcones} ${output_dir}  
