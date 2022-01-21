@@ -310,16 +310,3 @@ class LightconeSorter:
 
         self.message("Done.")
         outfile.close()
-
-
-if __name__ == "__main__":
-
-    basedir          = sys.argv[1]
-    basename         = sys.argv[2]
-    nr_redshift_bins = int(sys.argv[3])
-    nside            = int(sys.argv[4])
-    outdir           = sys.argv[5]
-
-    lightcone = LightconeSorter(basedir, basename, MPI.COMM_WORLD)
-    lightcone.write_sorted_lightcone(outdir, nr_redshift_bins, nside)
-    del lightcone
