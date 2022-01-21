@@ -106,3 +106,26 @@ are read in. If vector=None and radius=None then the whole sky is read in.
 Note that this may return particles outside the specified region because the
 indexed lightcone is stored in chunks and all chunks overlapping the region
 are returned.
+
+## Combining HEALPix maps
+
+The code above can read SWIFT HEALPix output regardless of how many files it
+is split over. However, it may be desirable to reduce the number of files if
+they're stored on a file system optimized for small numbers of large files.
+
+The script bin/combine_maps_mpi.py can be used to combine the maps for each
+shell into a single HDF5 file. This script is parallelized using mpi4py and
+can be run as follows:
+
+```
+input_dir=./lightcones/
+output_dir=./indexed_lightcones/
+nr_lightcones=2
+
+mpirun python3 -m mpi4py \
+    combine_maps_mpi.py ${input_dir} ${nr_lightcones} ${output_dir}  
+```
+
+This will process all shells for the specified lightcones. The script assumes
+that the lightcone basenames in the swift parameter file are lightcone0, 
+lightcone1, ... etc.
