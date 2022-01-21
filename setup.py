@@ -8,5 +8,6 @@ setup(name='SWIFT Lightcone I/O',
       author='John Helly',
       author_email='j.c.helly@durham.ac.uk',
       packages=['lightcone_io',],
+      scripts=['bin/combine_maps_mpi.py',],
      )
 
