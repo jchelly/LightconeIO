@@ -113,9 +113,9 @@ The code above can read SWIFT HEALPix output regardless of how many files it
 is split over. However, it may be desirable to reduce the number of files if
 they're stored on a file system optimized for small numbers of large files.
 
-The script bin/combine_maps_mpi.py can be used to combine the maps for each
-shell into a single HDF5 file. This script is parallelized using mpi4py and
-can be run as follows:
+The script bin/lightcone_io_combine_maps.py can be used to combine the maps 
+for each shell into a single HDF5 file. This script is parallelized using 
+mpi4py and can be run as follows:
 
 ```
 input_dir=./lightcones/
@@ -123,9 +123,42 @@ output_dir=./indexed_lightcones/
 nr_lightcones=2
 
 mpirun python3 -m mpi4py \
-    combine_maps_mpi.py ${input_dir} ${nr_lightcones} ${output_dir}  
+    lightcone_io_combine_maps.py ${input_dir} ${nr_lightcones} ${output_dir}  
 ```
 
 This will process all shells for the specified lightcones. The script assumes
 that the lightcone basenames in the swift parameter file are lightcone0, 
 lightcone1, ... etc.
+
+## Indexing particle outputs
+
+SWIFT lightcone particle outputs are spread over many files and not sorted
+in any useful order. The script bin/lightcone_io_index_particles.py can be
+used to sort the particles and generate an index which can be used to
+quickly retrieve particles by redshift and position on the sky.
+
+The sky is divided into pixels using a low resolution HEALPix map and
+each pixel is split into redshift bins. This defines a set of cells of
+varying volume. The redshift bins are chosen such that the number of particles
+per cell is roughly constant. The particles are then stored in order of which
+cell they belong to and the location of each cell in the output files is
+stored. This information is used by the lightcone_io.particle_reader module
+to extract requested particles.
+
+The script is parallelized with mpi4py and can be run as follows:
+```
+# Location of the input lightcones
+basedir="./lightcones/"
+
+# Name of the lightcone to process
+basename="lightcone0"
+
+# Number of redshift bins to use
+nr_redshift_bins=4
+
+# HEALPix map resolution to use
+nside=32
+
+mpirun python3 -m mpi4py lightcone_io_index_particles.py \
+              ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${outdir}
+```

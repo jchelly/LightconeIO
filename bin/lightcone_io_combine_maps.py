@@ -36,18 +36,29 @@ def combine_maps_mpi(indir, nr_lightcones, outdir):
 
 if __name__ == "__main__":
     
+    usage="""
+    Usage: python3 -m mpi4py lightcone_io_combine_maps.py \\
+              basedir nr_lightcones outdir
+
+    basedir      : location of the input lightcones
+    nr_lightcones: number of lightcones to process
+    outdir       : where to write the output
+"""
+
     args = {}
     if comm_rank == 0:
-        args["indir"] = sys.argv[1]
-        args["nr_lightcones"] = int(sys.argv[2])
-        args["outdir"] = sys.argv[3]
+        if len(sys.argv) != 4:
+            print(usage)
+            args = None
+        else:
+            args["indir"] = sys.argv[1]
+            args["nr_lightcones"] = int(sys.argv[2])
+            args["outdir"] = sys.argv[3]
     args = comm.bcast(args)
 
-    if comm_rank == 0:
-        print("Starting")
-        for name in args:
-            print("  argument ", name, " = ", args[name])
-    comm.barrier()
+    if args is None:
+        comm.finalize()
+        sys.exit(0)
 
     combine_maps_mpi(args["indir"], args["nr_lightcones"], args["outdir"])
 

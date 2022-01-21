@@ -42,3 +42,7 @@ if __name__ == "__main__":
     
     lightcone.write_sorted_lightcone(args["outdir"], args["nr_redshift_bins"],
                                      args["nside"])
+
+    comm.barrier()
+    if comm_rank == 0:
+        print("Done.")
