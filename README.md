@@ -130,6 +130,9 @@ This will process all shells for the specified lightcones. The script assumes
 that the lightcone basenames in the swift parameter file are lightcone0, 
 lightcone1, ... etc.
 
+There is an example SLURM batch script to run on the FLAMINGO simulations on
+COSMA-8 in scripts/FLAMINGO/combine_L1000N1800.sh.
+
 ## Indexing particle outputs
 
 SWIFT lightcone particle outputs are spread over many files and not sorted
@@ -162,5 +165,8 @@ nside=32
 mpirun python3 -m mpi4py lightcone_io_index_particles.py \
               ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${outdir}
 ```
+There is an example SLURM batch script to run on the FLAMINGO simulations on
+COSMA-8 in scripts/FLAMINGO/sort_L1000N1800.sh.
+
 Note that this script requires the virgo python module from
 https://github.com/jchelly/VirgoDC .
