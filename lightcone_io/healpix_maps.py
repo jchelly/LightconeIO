@@ -294,3 +294,67 @@ def combine_healpix_maps(indir, basename, shell_nr, outdir):
         raise Exception("Number of pixels copied is wrong!")
 
     print("Finished merging files")
+
+
+def fetch_pixels(indir, basename, shell_nr, dataset):
+    
+    max_per_fetch = 10*1024*1024
+
+    # Loop over input files
+    file_nr = 0
+    total_read = 0
+    while True:
+
+        # Open the current file and dataset
+        inname = map_file_name(indir, basename, shell_nr, file_nr)
+        infile = h5py.File(inname, "r")
+        dset = infile[dataset]
+        if file_nr == 0:
+            total_pixels = dset.attrs["number_of_pixels"]
+
+        # Loop over and return pixels in this file
+        for offset in range(0, dset.shape[0], max_per_fetch):
+            i1 = offset
+            i2 = offset + max_per_fetch
+            if i2 > dset.shape[0]:
+                i2 = dset.shape[0]
+            assert (i2 > i1)
+            yield dset[i1:i2]
+            total_read += (i2 - i1)
+
+        # Next file
+        infile.close()
+        file_nr += 1
+
+        # Check if we're done
+        assert total_read <= total_pixels
+        if total_read == total_pixels:
+            break
+
+
+def compare_healpix_maps(indir1, indir2, basename, shell_nr, dataset):
+    
+    # Compute hash of first map
+    map1 = fetch_pixels(indir1, basename, shell_nr, dataset)
+    map1_hash = hashlib.sha256()
+    for pixel_data in map1:
+        map1_hash.update(pixel_data)
+    map1_hash = map1_hash.digest()
+
+    # Compute hash of second map
+    map2 = fetch_pixels(indir2, basename, shell_nr, dataset)
+    map2_hash = hashlib.sha256()
+    for pixel_data in map2:
+        map2_hash.update(pixel_data)
+    map2_hash = map2_hash.digest()
+
+    return (map1_hash == map2_hash)
+
+
+def get_map_names(fname):
+    map_names = []
+    with h5py.File(fname, "r") as infile:
+        for name in infile:
+            if isinstance(infile[name], h5py.Dataset):
+                map_names.append(name)
+    return map_names
