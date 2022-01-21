@@ -162,3 +162,5 @@ nside=32
 mpirun python3 -m mpi4py lightcone_io_index_particles.py \
               ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${outdir}
 ```
+Note that this script requires the virgo python module from
+https://github.com/jchelly/VirgoDC .
