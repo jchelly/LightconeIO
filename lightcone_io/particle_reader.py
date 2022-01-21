@@ -25,6 +25,8 @@ else:
 
 def merge_cells(cell_offset, cell_length):
 
+    max_length = 10*1024*1024
+
     keep = cell_length > 0
     cell_length = cell_length[keep]
     cell_offset = cell_offset[keep]
@@ -32,7 +34,7 @@ def merge_cells(cell_offset, cell_length):
     ncells = len(cell_length)
     j = 0
     for i in range(1,ncells):
-        if cell_offset[i] == cell_offset[j]+cell_length[j]:
+        if (cell_offset[i] == cell_offset[j]+cell_length[j] and cell_length[i]+cell_length[j] <= max_length):
             cell_length[j] += cell_length[i]
             cell_length[i] = 0
         else:
@@ -228,6 +230,57 @@ class IndexedLightconeParticleType:
 
         # Read the data
         return self.read_cells(property_names, cells_to_read)
+
+    def iterate_chunks(self, property_names, vector=None, radius=None, redshift_range=None):
+        
+        if redshift_range is not None:
+            # Get redshift range to read
+            redshift_min, redshift_max = [float(r) for r in redshift_range]
+        else:
+            # Read all redshifts
+            redshift_min = self.index["redshift_bins"][0]
+            redshift_max = self.index["redshift_bins"][-1]
+
+        if vector is not None:
+            # Select specified location on the sky
+            if radius is None:
+                raise ValueError("If specifying a radius must specify line of sight vector too")
+            radius = float(radius)
+            vector = np.asarray(vector, dtype=float)
+        else:
+            # Select full sky
+            vector = np.asarray((1,0,0), dtype=float)
+            radius = 2*np.pi
+
+        # Find which redshift and healpix bins we should read in
+        healpix_bins  = self.get_pixels_in_radius(vector, radius)
+        redshift_bins = self.get_redshift_bins_in_range(redshift_min, redshift_max)
+        cells_to_read = self.get_cell_indexes(redshift_bins, healpix_bins)
+        nr_cells = len(cells_to_read)
+
+        # Find the sizes of the selected cells
+        cell_size = self.index["cell_length"][cells_to_read]
+
+        # Loop over and yield chunks of cells containing up to max_particles
+        max_particles = 1024*1024
+        i1 = 0
+        while i1 < nr_cells:
+            
+            # Will always read at least one cell
+            i2 = i1 + 1
+            nr_to_read = cell_size[i1]
+
+            # Determine how many more cells to read
+            while i2 < nr_cells and nr_to_read+cell_size[i2] <= max_particles:
+                nr_to_read += cell_size[i2]
+                i2 += 1
+
+            # Read and return the cell(s), if they contain any particles
+            if nr_to_read > 0:
+                yield self.read_cells(property_names, cells_to_read[i1:i2])
+
+            # Advance to the nex set of cells
+            i1 = i2
 
 
 class IndexedLightcone(collections.abc.Mapping):

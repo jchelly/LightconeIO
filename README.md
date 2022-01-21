@@ -107,6 +107,17 @@ Note that this may return particles outside the specified region because the
 indexed lightcone is stored in chunks and all chunks overlapping the region
 are returned.
 
+There is also a way to iterate through the selected particles without reading
+them all into memory:
+```
+for data in lightcone["DM"].iterate_chunks(property_names, vector, radius,
+                                           redshift_range):
+  pos = data["Coordinates"]
+  ids = data["ParticleIDs"]
+  # then do something with this subset of the selected particles...
+```
+Each iteration of this loop will receive a chunk of particles in the dict data.
+
 ## Combining HEALPix maps
 
 The code above can read SWIFT HEALPix output regardless of how many files it
