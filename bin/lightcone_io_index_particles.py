@@ -34,7 +34,7 @@ if __name__ == "__main__":
     args = comm.bcast(args)
 
     if args is None:
-        comm.finalize()
+        MPI.Finalize()
         sys.exit(0)
 
     lightcone = LightconeSorter(args["basedir"], args["basename"],

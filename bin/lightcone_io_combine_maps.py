@@ -57,7 +57,7 @@ if __name__ == "__main__":
     args = comm.bcast(args)
 
     if args is None:
-        comm.finalize()
+        MPI.Finalize()
         sys.exit(0)
 
     combine_maps_mpi(args["indir"], args["nr_lightcones"], args["outdir"])
