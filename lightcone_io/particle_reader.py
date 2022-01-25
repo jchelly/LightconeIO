@@ -91,7 +91,7 @@ class IndexedLightconeParticleType:
         nside = self.index["nside"]
         return hp.query_disc(nside, vector, radius, inclusive=True)
 
-    def get_cell_indexes(self, redshift_bins, healpix_bins):
+    def get_cell_indexes_from_bins(self, redshift_bins, healpix_bins):
         """
         Given arrays of redshift and healpix bins to read, return
         indexes of all cells which must be read.
@@ -202,8 +202,8 @@ class IndexedLightconeParticleType:
 
         return data
 
-    def read(self, property_names, vector=None, radius=None, redshift_range=None):
-        
+    def get_cell_indexes_from_vector_radius_redshift(self, vector, radius, redshift_range):
+
         if redshift_range is not None:
             # Get redshift range to read
             redshift_min, redshift_max = [float(r) for r in redshift_range]
@@ -226,43 +226,31 @@ class IndexedLightconeParticleType:
         # Find which redshift and healpix bins we should read in
         healpix_bins  = self.get_pixels_in_radius(vector, radius)
         redshift_bins = self.get_redshift_bins_in_range(redshift_min, redshift_max)
-        cells_to_read = self.get_cell_indexes(redshift_bins, healpix_bins)
+        cells_to_read = self.get_cell_indexes_from_bins(redshift_bins, healpix_bins)
+        
+        return cells_to_read
 
-        # Read the data
+    def count_particles(self, vector=None, radius=None, redshift_range=None):
+
+        cells_to_read = self.get_cell_indexes_from_vector_radius_redshift(vector, radius, redshift_range)
+        cell_size = self.index["cell_length"][cells_to_read]
+        return np.sum(cell_size)
+
+    def read(self, property_names, vector=None, radius=None, redshift_range=None):
+
+        cells_to_read = self.get_cell_indexes_from_vector_radius_redshift(vector, radius, redshift_range)
         return self.read_cells(property_names, cells_to_read)
 
-    def iterate_chunks(self, property_names, vector=None, radius=None, redshift_range=None):
-        
-        if redshift_range is not None:
-            # Get redshift range to read
-            redshift_min, redshift_max = [float(r) for r in redshift_range]
-        else:
-            # Read all redshifts
-            redshift_min = self.index["redshift_bins"][0]
-            redshift_max = self.index["redshift_bins"][-1]
+    def iterate_chunks(self, property_names, vector=None, radius=None, redshift_range=None,
+                       max_particles=1048576):
 
-        if vector is not None:
-            # Select specified location on the sky
-            if radius is None:
-                raise ValueError("If specifying a radius must specify line of sight vector too")
-            radius = float(radius)
-            vector = np.asarray(vector, dtype=float)
-        else:
-            # Select full sky
-            vector = np.asarray((1,0,0), dtype=float)
-            radius = 2*np.pi
-
-        # Find which redshift and healpix bins we should read in
-        healpix_bins  = self.get_pixels_in_radius(vector, radius)
-        redshift_bins = self.get_redshift_bins_in_range(redshift_min, redshift_max)
-        cells_to_read = self.get_cell_indexes(redshift_bins, healpix_bins)
+        cells_to_read = self.get_cell_indexes_from_vector_radius_redshift(vector, radius, redshift_range)
         nr_cells = len(cells_to_read)
 
         # Find the sizes of the selected cells
         cell_size = self.index["cell_length"][cells_to_read]
 
         # Loop over and yield chunks of cells containing up to max_particles
-        max_particles = 1024*1024
         i1 = 0
         while i1 < nr_cells:
             
