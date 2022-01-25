@@ -30,5 +30,5 @@ outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/${name}/lightcones
 # Assume script is in $PATH
 script=`which lightcone_io_index_particles.py`
 
-mpirun python3 -u -m mpi4py ./${script} \
+mpirun python3 -u -m mpi4py ${script} \
     ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${outdir}
