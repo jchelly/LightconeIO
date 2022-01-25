@@ -1,6 +1,6 @@
 #!/bin/bash -l
 #
-#SBATCH --nodes=3
+#SBATCH --nodes=4
 #SBATCH --tasks-per-node=32
 #SBATCH --cpus-per-task=1
 #SBATCH -o ./logs/L1000N1800/index_%x.out
