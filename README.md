@@ -181,3 +181,18 @@ COSMA-8 in scripts/FLAMINGO/sort_L1000N1800.sh.
 
 Note that this script requires the virgo python module from
 https://github.com/jchelly/VirgoDC .
+
+## Example Scripts
+
+### Making a new HEALPix map from lightcone particle data
+
+The script `examples/make_map_from_particles.py` shows how to make a new
+HEALPix map by projecting particles from a ligthcone particle output onto
+the sky.
+
+The script uses the iterate_chunks() method from the IndexedLightcone class
+to read in chunks of particles in the required redshift range. It calculates
+which HEALPix pixel each particle maps onto using healpy and adds the particle's
+mass to that pixel. The resulting map is written to a new HDF5 file.
+
+
