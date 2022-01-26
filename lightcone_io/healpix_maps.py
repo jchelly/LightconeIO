@@ -232,7 +232,7 @@ def combine_healpix_maps(indir, basename, shell_nr, outdir):
     infile.copy(source="Units", dest=outfile)
     infile.copy(source="InternalCodeUnits", dest=outfile)
     infile.copy(source="Shell", dest=outfile)
-    outfile["Shell"].attrs["nr_files_per_shell"] = 1
+    outfile["Shell"].attrs["nr_files_per_shell"] = (1,)
 
     # Get list of datasets
     datasets = []
