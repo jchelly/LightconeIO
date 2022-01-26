@@ -184,10 +184,16 @@ https://github.com/jchelly/VirgoDC .
 
 ## Example Scripts
 
+### Plotting a pencil beam from the particle data
+
+The script 'examples/plot_pencil_beam.py' reads in all particles in a 2 degree
+radius about a vector along the x axis and makes a log scaled plot of projected
+mass.
+
 ### Making a new HEALPix map from lightcone particle data
 
 The script `examples/make_map_from_particles.py` shows how to make a new
-HEALPix map by projecting particles from a ligthcone particle output onto
+HEALPix map by projecting particles from a lightcone particle output onto
 the sky.
 
 The script uses the iterate_chunks() method from the IndexedLightcone class
