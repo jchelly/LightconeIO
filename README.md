@@ -184,6 +184,11 @@ https://github.com/jchelly/VirgoDC .
 
 ## Example Scripts
 
+## Plotting a HEALPix map
+
+The script 'examples/plot_healpix_map.py' shows how to read in a full HEALPix map
+and plot it using the healpy mollview function.
+
 ### Plotting a pencil beam from the particle data
 
 The script 'examples/plot_pencil_beam.py' reads in all particles in a 2 degree

@@ -163,7 +163,7 @@ class Shell(collections.abc.Mapping):
             self.filenames.append(fname)
             if file_nr == 0:
                 with h5py.File(fname, "r") as infile:
-                    nr_files = infile["Shell"].attrs["nr_files_per_shell"][0]
+                    nr_files = int(infile["Shell"].attrs["nr_files_per_shell"])
                     self.comoving_inner_radius = infile["Shell"].attrs["comoving_inner_radius"][0]
                     self.comoving_outer_radius = infile["Shell"].attrs["comoving_outer_radius"][0]
                     self.map_names = []
