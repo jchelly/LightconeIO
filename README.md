@@ -184,7 +184,7 @@ https://github.com/jchelly/VirgoDC .
 
 ## Example Scripts
 
-## Plotting a HEALPix map
+### Plotting a HEALPix map
 
 The script 'examples/plot_healpix_map.py' shows how to read in a full HEALPix map
 and plot it using the healpy mollview function.
