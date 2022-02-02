@@ -195,7 +195,7 @@ class ShellArray(collections.abc.Sequence):
         # Get number of shells from the index file
         fname = basedir+"/"+basename+"_index.hdf5"
         with h5py.File(fname, "r") as infile:
-            self.nr_shells = infile["Lightcone"].attrs["nr_files_per_shell"][0]
+            self.nr_shells = infile["Lightcone"].attrs["nr_shells"][0]
 
         # Initialise shells
         self._shell = []
