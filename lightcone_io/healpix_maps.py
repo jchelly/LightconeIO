@@ -6,6 +6,7 @@ import os
 import numpy as np
 import h5py
 
+import lightcone_io.units
 
 try:
     import unyt
@@ -21,8 +22,7 @@ else:
         U_T = dset.attrs["U_T exponent"][0]
         U_t = dset.attrs["U_t exponent"][0]
         return cgs_factor * (unyt.A**U_I) * (unyt.cm**U_L) * (unyt.g**U_M) * (unyt.K**U_T) * (unyt.s**U_t) 
-
-
+    
 class HealpixMap(collections.abc.Sequence):
 
     def __init__(self, filenames, map_name):
@@ -209,11 +209,9 @@ class ShellArray(collections.abc.Sequence):
         return len(self._shell)
 
 
-
 def map_file_name(basedir, basename, shell_nr, file_nr):
     return ("%s/%s_shells/shell_%d/%s.shell_%d.%d.hdf5" %
             (basedir, basename, shell_nr, basename, shell_nr, file_nr))
-
 
 def combine_healpix_maps(indir, basename, shell_nr, outdir):
 
@@ -234,6 +232,9 @@ def combine_healpix_maps(indir, basename, shell_nr, outdir):
     infile.copy(source="Shell", dest=outfile)
     outfile["Shell"].attrs["nr_files_per_shell"] = (1,)
 
+    # Read the input unit information: this has the M, L, T etc units in cgs
+    input_units_cgs = dict(infile["Units"].attrs)
+    
     # Get list of datasets
     datasets = []
     for name in infile:
@@ -258,6 +259,14 @@ def combine_healpix_maps(indir, basename, shell_nr, outdir):
             outfile[name].attrs[attr_name] = infile[name].attrs[attr_name]
         print("Created output dataset %s" % name)
 
+        # Correct the unit metadata if necessary
+        corrections = lightcone_io.units.correct_units(dset, units_cgs)
+        if len(corrections) > 0:
+            print("WARNING: modifying unit info for ", name)
+        for attr_name, attr_value in corrections:
+            print("  Setting attribute ", attr_name, " to ", attr_value)
+            outfile[name].attrs[attr_name] = attr_value
+            
     # Close the input file
     infile.close()
 
