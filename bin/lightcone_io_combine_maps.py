@@ -1,6 +1,9 @@
 #!/bin/env python3
 
 import sys
+import os.path
+import shutil
+
 import h5py
 
 from mpi4py import MPI
@@ -32,6 +35,16 @@ def combine_maps_mpi(indir, nr_lightcones, outdir):
         basename = "lightcone%d" % lightcone_nr
         if index % comm_size == comm_rank:
             hm.combine_healpix_maps(indir, basename, shell_nr, outdir)
+
+    # Copy and update the index files if necessary
+    if comm_rank == 0:
+        for lightcone_nr in range(nr_lightcones):
+            input_index  = indir+("/lightcone%d_index.hdf5" % lightcone_nr)
+            output_index = outdir+("/lightcone%d_index.hdf5" % lightcone_nr)
+            if not(os.path.exists(output_index)):
+                shutil.copyfile(input_index, output_index)
+            with h5py.File(output_index, "r+") as indexfile:
+                indexfile["Lightcone"].attrs["nr_files_per_shell"] = [1,]
 
 
 if __name__ == "__main__":
