@@ -9,5 +9,6 @@ setup(name='SWIFT Lightcone I/O',
       author_email='j.c.helly@durham.ac.uk',
       packages=['lightcone_io',],
       scripts=['bin/lightcone_io_index_particles.py',
-               'bin/lightcone_io_combine_maps.py',],
+               'bin/lightcone_io_combine_maps.py',
+               'bin/lightcone_io_compare_maps.py',],
      )

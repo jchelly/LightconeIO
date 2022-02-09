@@ -2,6 +2,7 @@
 
 import collections.abc
 import os
+import hashlib
 
 import numpy as np
 import h5py
