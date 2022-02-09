@@ -233,7 +233,7 @@ def combine_healpix_maps(indir, basename, shell_nr, outdir):
     outfile["Shell"].attrs["nr_files_per_shell"] = (1,)
 
     # Read the input unit information: this has the M, L, T etc units in cgs
-    input_units_cgs = dict(infile["Units"].attrs)
+    input_units_cgs = lightcone_io.units.read_cgs_units(infile)
     
     # Get list of datasets
     datasets = []
@@ -260,10 +260,10 @@ def combine_healpix_maps(indir, basename, shell_nr, outdir):
         print("Created output dataset %s" % name)
 
         # Correct the unit metadata if necessary
-        corrections = lightcone_io.units.correct_units(dset, units_cgs)
+        corrections = lightcone_io.units.correct_units(dset, name, input_units_cgs)
         if len(corrections) > 0:
             print("WARNING: modifying unit info for ", name)
-        for attr_name, attr_value in corrections:
+        for attr_name, attr_value in corrections.items():
             print("  Setting attribute ", attr_name, " to ", attr_value)
             outfile[name].attrs[attr_name] = attr_value
             

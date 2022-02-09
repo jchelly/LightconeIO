@@ -4,8 +4,8 @@
 # Unit information which may be missing from lightcones
 #
 UNIT_CONV_NO_UNITS = {"U_"+base_unit : 0 for base_unit in "MLtIT"}
-UNIT_CONV_PHOTON_FLUX_PER_UNIT_SURFACE = dict(UNIT_CONV_NO_UNITS, U_L=-2.0, U_T=-1.0)
-UNIT_CONV_ENERGY_FLUX_PER_UNIT_SURFACE = dict(UNIT_CONV_NO_UNITS, U_M=1.0, U_T=-3.0)
+UNIT_CONV_PHOTON_FLUX_PER_UNIT_SURFACE = dict(UNIT_CONV_NO_UNITS, U_L=-2.0, U_t=-1.0)
+UNIT_CONV_ENERGY_FLUX_PER_UNIT_SURFACE = dict(UNIT_CONV_NO_UNITS, U_M=1.0, U_t=-3.0)
 missing_units = {
     "XrayErositaLowIntrinsicPhotons"   : UNIT_CONV_PHOTON_FLUX_PER_UNIT_SURFACE,
     "XrayErositaHighIntrinsicPhotons"  : UNIT_CONV_PHOTON_FLUX_PER_UNIT_SURFACE,
@@ -40,14 +40,14 @@ def read_cgs_units(infile):
         units_cgs[name] = infile["Units"].attrs[unit_cgs_name[name]][0]
     return units_cgs
     
-def compute_cgs_factor(dset, units_cgs):
+def compute_cgs_factor(exponents, units_cgs):
     """
     Compute conversion to CGS using the Units group and the dimensions of a dataset
     """
     cgs_factor = 1.0
     for base_unit in units_cgs:
-        exponent = dset.attrs[base_unit+" exponent"][0]
-        cgs_factor *= units_cgs[base_unit]**exponent
+        exponent = exponents[base_unit]
+        cgs_factor *= (units_cgs[base_unit]**exponent)
     return cgs_factor
 
 def cgs_expression(exponents, units_cgs):
@@ -80,7 +80,7 @@ def cgs_expression(exponents, units_cgs):
     
     return expression
     
-def correct_units(dset, units_cgs):
+def correct_units(dset, name, units_cgs):
     """
     Return corrected unit attributes for the specified dataset as a dict,
     which will be empty if there's nothing to do
@@ -88,11 +88,11 @@ def correct_units(dset, units_cgs):
 
     if dset.attrs["a-scale exponent"] != 0 or dset.attrs["h-scale exponent"]:
         raise NotImplementedError("Only implemented for quantities with no a/h factors")
-    
+
+    corrections = {}
     if name in missing_units:
 
         # Find correct exponents
-        corrections = {}
         for base_unit in units_cgs:
             expected_exponent = missing_units[name][base_unit]
             found_exponent = dset.attrs[base_unit+" exponent"][0]
@@ -103,9 +103,8 @@ def correct_units(dset, units_cgs):
         if len(corrections) > 0:
 
             # Find new CGS conversion
-            cgs_conversion = compute_cgs_factor(dset, units_cgs)
+            cgs_conversion = compute_cgs_factor(missing_units[name], units_cgs)
             corrections["Conversion factor to CGS (not including cosmological corrections)"] = [cgs_conversion,]
-            corrections["Conversion factor to physical CGS (including cosmological corrections)"] = [cgs_conversion,]
             corrections["Expression for physical CGS units"] = cgs_expression(missing_units[name], units_cgs)
 
     return corrections

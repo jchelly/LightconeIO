@@ -17,7 +17,7 @@ def combine_maps_mpi(indir, nr_lightcones, outdir):
         # Read the index files to get number of shells
         shells = []
         for lightcone_nr in range(nr_lightcones):
-            fname = indir+("./lightcone%d_index.hdf5" % lightcone_nr)
+            fname = indir+("/lightcone%d_index.hdf5" % lightcone_nr)
             with h5py.File(fname, "r") as infile:
                 nr_shells = infile["Lightcone"].attrs["nr_shells"][0]
             print("Lightcone %d has %d shells" % (lightcone_nr, nr_shells))
