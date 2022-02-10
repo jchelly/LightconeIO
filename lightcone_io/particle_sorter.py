@@ -214,10 +214,11 @@ class LightconeSorter:
 
         self.message("Copying index file")
         if comm_rank == 0:
-            # Copy the file
+            # Copy the file, if it doesn't already exist
             new_index_file_name = self.metadata.index_file_name(basedir=new_basedir)
-            os.makedirs(os.path.dirname(new_index_file_name), exist_ok=True)
-            shutil.copyfile(self.metadata.index_file_name(), new_index_file_name)
+            if not(os.path.exists(new_index_file_name)):
+                os.makedirs(os.path.dirname(new_index_file_name), exist_ok=True)
+                shutil.copyfile(self.metadata.index_file_name(), new_index_file_name)
             # Update number of files: will write one file per MPI rank
             with h5py.File(new_index_file_name, "r+") as new_index_file:
                 new_index_file["Lightcone"].attrs["nr_mpi_ranks"] = comm_size
