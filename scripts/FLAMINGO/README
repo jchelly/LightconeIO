@@ -1,0 +1,29 @@
+
+L1000N1800 jobs
+---------------
+
+Combining maps
+
+Running:
+  DMO_PLANCK
+  DMO_PLANCK_LARGE_NU_FIXED
+  DMO_FIDUCIAL
+  DMO_PLANCK_MID_NU_VARY
+  DMO_PLANCK_LARGE_NU_VARY
+  HYDRO_FIDUCIAL
+  HYDRO_WEAK_AGN
+  HYDRO_PLANCK
+  HYDRO_STRONG_AGN
+
+Simulation not complete:
+  HYDRO_PLANCK_LARGE_NU_FIXED
+  HYDRO_PLANCK_LARGE_NU_VARY
+
+L2800N5040 jobs
+---------------
+
+Combining maps
+
+Running:
+  DMO_FIDUCIAL
+  HYDRO_FIDUCIAL
