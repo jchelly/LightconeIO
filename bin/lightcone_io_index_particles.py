@@ -6,7 +6,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 comm_rank = comm.Get_rank()
 
-import lightcone_io.particle_sorter
+from lightcone_io.particle_sorter import LightconeSorter
 
 if __name__ == "__main__":
 
