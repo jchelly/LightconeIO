@@ -65,6 +65,15 @@ pixel_data_partial = shell[0]["TotalMass"][0:100]
 If the unyt module is available then the results are returned as a unyt array
 with unit information derived from the HDF5 attributes in the output files.
 
+If the simulation hasn't completed yet it wont be possible to initialize a
+ShellArray because some of the files are missing. In that case you can open
+individual shells. E.g.:
+```
+shell_nr = 10
+shell = hm.Shell(basedir, basename, shell_nr)
+total_mass_map = shell["TotalMass"][...]
+```
+
 ## Reading indexed lightcone particle outputs
 
 Lightcone particle outputs can be post-processed to allow faster access to
@@ -186,12 +195,12 @@ https://github.com/jchelly/VirgoDC .
 
 ### Plotting a HEALPix map
 
-The script 'examples/plot_healpix_map.py' shows how to read in a full HEALPix map
+The script `examples/plot_healpix_map.py` shows how to read in a full HEALPix map
 and plot it using the healpy mollview function.
 
 ### Plotting a pencil beam from the particle data
 
-The script 'examples/plot_pencil_beam.py' reads in all particles in a 2 degree
+The script `examples/plot_pencil_beam.py` reads in all particles in a 2 degree
 radius about a vector along the x axis and makes a log scaled plot of projected
 mass.
 
