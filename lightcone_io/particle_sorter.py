@@ -5,6 +5,7 @@ import os
 import os.path
 import shutil
 import sys
+import gc
 
 import h5py
 
@@ -209,6 +210,8 @@ class LightconeSorter:
         Write out a new lightcone with particles sorted by bin index
         """
 
+        gc.collect()
+
         comm_rank = self.comm.Get_rank()
         comm_size = self.comm.Get_size()
 
@@ -261,6 +264,8 @@ class LightconeSorter:
                 # Loop over quantities
                 for name in self.metadata.properties[ptype]:
 
+                    gc.collect()
+
                     # Find dataset template
                     dset_in = self.metadata.file[ptype][name]
                     
@@ -279,6 +284,7 @@ class LightconeSorter:
                             ps.fetch_elements(col, sort_index, comm=self.comm, result=col)
                             data[:,i] = col
                             del col
+                            gc.collect()
                     else:
                         raise Exception("Arrays with >2 dimensions not supported!")
                     self.message("  writing %s" % name)
@@ -288,6 +294,7 @@ class LightconeSorter:
                     lm.create_dataset(outfile[ptype], name, dtype_id, shape, dcpl_id)
                     outfile[ptype][name][...] = data
                     del data
+                    gc.collect()
 
                     # Add metadata to the array
                     dset_out = outfile[ptype][name]
@@ -295,6 +302,7 @@ class LightconeSorter:
                         dset_out.attrs[attr_name] = dset_in.attrs[attr_name]
 
                 del sort_index
+                gc.collect()
 
                 # Update particle number for this type
                 outfile["Lightcone"].attrs["cumulative_count_"+ptype] = local_nr_particles[comm_rank]
