@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=70
 #SBATCH --cpus-per-task=1
-#SBATCH -o ./logs/L2800N5040/%x.out
+#SBATCH -o ./logs/L2800N5040/%x.lightcone%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
 #SBATCH -t 72:00:00
@@ -14,14 +14,13 @@ module load gnu_comp/11.1.0 openmpi/4.1.1
 module load python/3.10.1
 
 sim="L2800N5040/${SLURM_JOB_NAME}"
+basename=lightcone${SLURM_ARRAY_TASK_ID}
 
 input_dir=/cosma8/data/dp004/jlvc76/FLAMINGO/ScienceRuns/${sim}/lightcones/
 output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones/
-
-nr_lightcones=2
 
 # Assume script is in $PATH
 script=`which lightcone_io_combine_maps.py`
 
 mpirun python3 -m mpi4py ${script} \
-    ${input_dir} ${nr_lightcones} ${output_dir}  
+    ${input_dir} ${output_dir} ${basename}  
