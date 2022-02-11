@@ -3,7 +3,7 @@
 #SBATCH --nodes=6
 #SBATCH --tasks-per-node=32
 #SBATCH --cpus-per-task=1
-#SBATCH -o ./logs/L1000N1800/index_%x.out
+#SBATCH -o ./logs/L1000N1800/index_%x.lightcone%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
 #SBATCH -t 72:00:00
@@ -15,10 +15,11 @@ module load gnu_comp/11.1.0
 module load openmpi/4.1.1
 
 name=${SLURM_JOB_NAME}
+lightcone_nr=${SLURM_ARRAY_TASK_ID}
 
 # Input lightcone
 basedir=/cosma8/data/dp004/jlvc76/FLAMINGO/ScienceRuns/L1000N1800/${name}/lightcones/
-basename=lightcone0
+basename=lightcone${lightcone_nr}
 
 # Binning
 nr_redshift_bins=16
