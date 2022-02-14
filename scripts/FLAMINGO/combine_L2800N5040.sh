@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=70
 #SBATCH --cpus-per-task=1
-#SBATCH -o ./logs/L2800N5040/%x.lightcone%a.out
+#SBATCH -o ./logs/L2800N5040/combine_maps.%x.lightcone%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
 #SBATCH -t 72:00:00

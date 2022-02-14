@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=70
 #SBATCH --cpus-per-task=1
-#SBATCH -o ./logs/L1000N1800/%x.out
+#SBATCH -o ./logs/L1000N1800/combine_maps_%x.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
 #SBATCH -t 12:00:00
