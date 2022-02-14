@@ -71,7 +71,7 @@ def cgs_expression(exponents, units_cgs):
         if power == 0:
             pass
         elif power == 1.0:
-            expression += cgs_unit[base_unit]
+            expression += cgs_unit[base_unit] + " "
         elif power % 1.0 == 0.0:
             expression += ("%s^%d " % (cgs_unit[base_unit], power))
         else:
