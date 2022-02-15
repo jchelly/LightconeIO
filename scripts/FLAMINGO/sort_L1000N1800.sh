@@ -14,6 +14,8 @@ module load python/3.10.1
 module load gnu_comp/11.1.0
 module load openmpi/4.1.1
 
+export OPENBLAS_NUM_THREADS=1
+
 name=${SLURM_JOB_NAME}
 lightcone_nr=${SLURM_ARRAY_TASK_ID}
 
