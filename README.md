@@ -93,7 +93,16 @@ the keys. E.g. to see which types are available:
 ```
 print(list(lightcone))
 ```
-Particles can then be read in as follows:
+You can use the properties attribute to see what quantities are available for
+each particle type:
+```
+print(lightcone["Gas"].properties)
+```
+Each entry in properties is a zero element unyt array with the dtype, units
+and shape of the quantity in the file and a `attrs` attribute which contains
+a copy of the HDF5 attributes of the dataset.
+
+Particles can be read in as follows:
 ```
 # Quantities to read in
 properties = ("Coordinates", "ParticleIDs")

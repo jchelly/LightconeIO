@@ -73,6 +73,24 @@ class IndexedLightconeParticleType:
         self.index["last_cell_in_file"] = (
             np.searchsorted(first_particle_in_cell, last_particle_in_file, side="right") - 1)
 
+        # Find which quantities we have for this type
+        for filename in self.filenames:
+            with h5py.File(filename, "r") as infile:
+                if type_name in infile:
+                    properties = {}
+                    for prop_name, dataset in infile[type_name].items():
+                        if "a-scale exponent" in dataset.attrs:
+                            shape = dataset.shape[1:]
+                            dtype = dataset.dtype
+                            if unyt is not None:
+                                units = units_from_attributes(dataset)
+                                properties[prop_name] = unyt.unyt_array(np.ndarray((0,)+shape, dtype=dataset.dtype), units)
+                            else:
+                                properties[prop_name] = np.ndarray((0,)+shape, dtype=dtype)
+                            properties[prop_name].attrs = dict(dataset.attrs)
+                    break
+        self.properties = properties
+
     def get_redshift_bins_in_range(self, redshift_min, redshift_max):
         """
         Return indexes of all redshift bins overlapping specified range
@@ -185,7 +203,7 @@ class IndexedLightconeParticleType:
                         units = units_from_attributes(dset)
                         data[name] = unyt.unyt_array(np.ndarray(shape, dtype=dset.dtype), units)
                     else:
-                        data[name] = np.ndarray(shape, dtype=dset.dtype)
+                        data[name] = np.ndarray(shape, dtype=dataset.dtype)
                     offset[name] = 0
 
                 # Read the cells
