@@ -23,9 +23,15 @@ lightcone_nr=${SLURM_ARRAY_TASK_ID}
 basedir=/cosma8/data/dp004/jlvc76/FLAMINGO/ScienceRuns/L1000N1800/${name}/lightcones/
 basename=lightcone${lightcone_nr}
 
-# Binning
+# Number of redshift bins
 nr_redshift_bins=16
+
+# HEALPix map resolution and ordering for binning on the sky
 nside=16
+order="ring"
+
+# Whether to sort by redshift first then pixel (1) or pixel first then redshift (0)
+redshift_first=0
 
 # Output directory
 outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/${name}/lightcones/
@@ -34,4 +40,4 @@ outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/${name}/lightcones
 script=`which lightcone_io_index_particles.py`
 
 mpirun python3 -u -m mpi4py ${script} \
-    ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${outdir}
+    ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${order} ${redshift_first} ${outdir}

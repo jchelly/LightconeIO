@@ -30,7 +30,9 @@ if __name__ == "__main__":
             args["basename"]         = sys.argv[2]
             args["nr_redshift_bins"] = int(sys.argv[3])
             args["nside"]            = int(sys.argv[4])
-            args["outdir"]           = sys.argv[5]
+            args["order"]            = sys.argv[5]
+            args["redshift_first"]   = bool(int(sys.argv[6]))
+            args["outdir"]           = sys.argv[7]
 
     args = comm.bcast(args)
     if args is None:
@@ -44,7 +46,7 @@ if __name__ == "__main__":
     if comm_rank == 0:
         print("Sorting lightcone")    
     lightcone.write_sorted_lightcone(args["outdir"], args["nr_redshift_bins"],
-                                     args["nside"])
+                                     args["nside"], args["order"], args["redshift_first"])
 
     comm.barrier()
     if comm_rank == 0:

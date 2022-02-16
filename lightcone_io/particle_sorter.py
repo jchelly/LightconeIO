@@ -341,10 +341,7 @@ class LightconeSorter:
                 cells["nside"] = nside
                 cells["redshift_bins"] = z_bins
                 cells["order"] = order
-                if redshift_first:
-                    cells["redshift_first"] = 1
-                else:
-                    cells["redshift_first"] = 0
+                cells["redshift_first"] = 1 if redshift_first else 0
 
         self.message("Done.")
         outfile.close()
