@@ -99,7 +99,7 @@ class LightconeSorter:
         assert output_offset == self.particle_count[particle_type]
         return data
 
-    def compute_bins(self, particle_type, nr_redshift_bins, nside):
+    def compute_bins(self, particle_type, nr_redshift_bins, nside, order):
         """
         Decide on the redshift and healpix bins for this lightcone.
 
@@ -110,11 +110,19 @@ class LightconeSorter:
         particles in order of which bin they belong to.
         """
         
+        # HEALPix pixel ordering convention
+        if order == "nest":
+            nest=True
+        elif order == "ring":
+            nest=False
+        else:
+            raise Exception("Invalid order parameter")
+
         # Find which healpix pixel each particle is in
         self.message("  read coordinates")
         pos = self.read_array(particle_type, "Coordinates")
         self.message("  compute healpix pixel index")
-        hp_bin_index = hp.pixelfunc.vec2pix(nside, pos[:,0], pos[:,1], pos[:,2])
+        hp_bin_index = hp.pixelfunc.vec2pix(nside, pos[:,0], pos[:,1], pos[:,2], nest=nest)
         del pos
         
         # Get the redshift of each particle
@@ -205,7 +213,7 @@ class LightconeSorter:
         # Return the array of bins and the sorting index
         return z_bins, bins, sort_index
 
-    def write_sorted_lightcone(self, new_basedir, nr_redshift_bins, nside):
+    def write_sorted_lightcone(self, new_basedir, nr_redshift_bins, nside, order="ring"):
         """
         Write out a new lightcone with particles sorted by bin index
         """
@@ -253,7 +261,7 @@ class LightconeSorter:
                 outfile.create_group(ptype)
                 
                 # Get sorting order and bins for this type
-                z_bins, bins, sort_index = self.compute_bins(ptype, nr_redshift_bins, nside)
+                z_bins, bins, sort_index = self.compute_bins(ptype, nr_redshift_bins, nside, order)
 
                 # Find offset to first particle in each file
                 local_nr_particles = len(sort_index)
@@ -316,6 +324,7 @@ class LightconeSorter:
                 cells["num_particles_in_file"]  = local_nr_particles
                 cells["nside"] = nside
                 cells["redshift_bins"] = z_bins
+                cells["order"] = order
 
         self.message("Done.")
         outfile.close()

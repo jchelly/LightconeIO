@@ -107,7 +107,14 @@ class IndexedLightconeParticleType:
         Return indexes of all healpix pixels within radius of vector
         """
         nside = self.index["nside"]
-        return hp.query_disc(nside, vector, radius, inclusive=True)
+        order = self.index["order"] if "order" in self.index else "ring"
+        if order == "nest":
+            nest=True
+        elif order == "ring":
+            nest=False
+        else:
+            raise Exception("Invalid order parameter")
+        return hp.query_disc(nside, vector, radius, inclusive=True, nest=nest)
 
     def get_cell_indexes_from_bins(self, redshift_bins, healpix_bins):
         """
