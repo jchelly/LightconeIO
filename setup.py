@@ -10,5 +10,6 @@ setup(name='SWIFT Lightcone I/O',
       packages=['lightcone_io',],
       scripts=['bin/lightcone_io_index_particles.py',
                'bin/lightcone_io_combine_maps.py',
-               'bin/lightcone_io_compare_maps.py',],
+               'bin/lightcone_io_compare_maps.py',
+               'bin/lightcone_io_downsample_maps.py',],
      )
