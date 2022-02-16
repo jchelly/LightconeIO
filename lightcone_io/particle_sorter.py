@@ -99,7 +99,8 @@ class LightconeSorter:
         assert output_offset == self.particle_count[particle_type]
         return data
 
-    def compute_bins(self, particle_type, nr_redshift_bins, nside, order):
+    def compute_bins(self, particle_type, nr_redshift_bins, nside, order,
+                     redshift_first):
         """
         Decide on the redshift and healpix bins for this lightcone.
 
@@ -185,17 +186,30 @@ class LightconeSorter:
                               ("length", np.int64)])
         bins = np.ndarray(nr_pixels*nr_redshift_bins, dtype=bin_dtype)
         offset = 0
-        for pixel_nr in range(nr_pixels):
-            for bin_nr in range(nr_redshift_bins):
-                bins[offset]["pixel"] = pixel_nr
-                bins[offset]["z_min"] = z_bins[bin_nr]
-                bins[offset]["z_max"] = z_bins[bin_nr+1]
-                bins[offset]["offset"] = 0
-                bins[offset]["length"] = 0
-                offset += 1
 
-        # Compute bin index for each particle
-        bin_index = z_bin_index + (hp_bin_index * nr_redshift_bins)
+        if redshift_first:
+            # Sort bins by redshift, then by pixel within a redshift bin
+            for bin_nr in range(nr_redshift_bins):
+                for pixel_nr in range(nr_pixels):
+                    bins[offset]["pixel"] = pixel_nr
+                    bins[offset]["z_min"] = z_bins[bin_nr]
+                    bins[offset]["z_max"] = z_bins[bin_nr+1]
+                    bins[offset]["offset"] = 0
+                    bins[offset]["length"] = 0
+                    offset += 1
+            bin_index = hp_bin_index + (z_bin_index * nr_pixels)
+        else:
+            # Sort bins by pixel, then by redshift within a pixel
+            for pixel_nr in range(nr_pixels):
+                for bin_nr in range(nr_redshift_bins):
+                    bins[offset]["pixel"] = pixel_nr
+                    bins[offset]["z_min"] = z_bins[bin_nr]
+                    bins[offset]["z_max"] = z_bins[bin_nr+1]
+                    bins[offset]["offset"] = 0
+                    bins[offset]["length"] = 0
+                    offset += 1
+            bin_index = z_bin_index + (hp_bin_index * nr_redshift_bins)
+
         del z_bin_index
         del hp_bin_index
 
@@ -213,7 +227,8 @@ class LightconeSorter:
         # Return the array of bins and the sorting index
         return z_bins, bins, sort_index
 
-    def write_sorted_lightcone(self, new_basedir, nr_redshift_bins, nside, order="ring"):
+    def write_sorted_lightcone(self, new_basedir, nr_redshift_bins, nside,
+                               order="ring", redshift_first=True):
         """
         Write out a new lightcone with particles sorted by bin index
         """
@@ -261,7 +276,8 @@ class LightconeSorter:
                 outfile.create_group(ptype)
                 
                 # Get sorting order and bins for this type
-                z_bins, bins, sort_index = self.compute_bins(ptype, nr_redshift_bins, nside, order)
+                z_bins, bins, sort_index = self.compute_bins(ptype, nr_redshift_bins, nside, order,
+                                                             redshift_first)
 
                 # Find offset to first particle in each file
                 local_nr_particles = len(sort_index)
@@ -325,6 +341,10 @@ class LightconeSorter:
                 cells["nside"] = nside
                 cells["redshift_bins"] = z_bins
                 cells["order"] = order
+                if redshift_first:
+                    cells["redshift_first"] = 1
+                else:
+                    cells["redshift_first"] = 0
 
         self.message("Done.")
         outfile.close()

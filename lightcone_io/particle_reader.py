@@ -126,7 +126,12 @@ class IndexedLightconeParticleType:
         nr_redshift_bins = len(self.index["redshift_bins"]) - 1
         redshift_bin_index = np.tile(redshift_bins, nr_pixels_to_read)
         healpix_bin_index = np.repeat(healpix_bins, nr_redshifts_to_read)
-        cells_to_read = redshift_bin_index + (healpix_bin_index * nr_redshift_bins)        
+        nr_pixels = hp.pixelfunc.nside2npix(self.index["nside"])
+        redshift_first = self.index["redshift_first"] if "redshift_first" in self.index else 0
+        if redshift_first:
+            cells_to_read = healpix_bin_index + (redshift_bin_index * nr_pixels)
+        else:
+            cells_to_read = redshift_bin_index + (healpix_bin_index * nr_redshift_bins)        
         return cells_to_read
 
     def read_cells(self, property_names, cells_to_read):
