@@ -21,6 +21,11 @@ def create_dataset(loc, name, type_id, shape, dcpl_id):
     dset_id.close()
 
 
+def gather_lists(comm, l):
+    l = comm.allgather(l)
+    return [item for sublist in l for item in sublist]
+
+
 class LightconeMetadata:
 
     def index_file_name(self, basedir=None):
@@ -35,53 +40,90 @@ class LightconeMetadata:
                 {"basedir" : basedir, "basename" : self.basename,
                  "file_nr" : file_nr, "mpi_rank_nr" : mpi_rank_nr})
 
-    def __init__(self, basedir, basename):
+    def __init__(self, basedir, basename, comm=None):
 
         self.basedir = basedir
         self.basename = basename
         self.file = None
 
-        # Read the index to determine how many files there are
-        with h5py.File(self.index_file_name(), "r") as infile:
-            self.nr_mpi_ranks = infile["Lightcone"].attrs["nr_mpi_ranks"][0]
-            self.final_particle_file_on_rank = infile["Lightcone"].attrs["final_particle_file_on_rank"]
-            self.part_types = []
-            for name in infile["Lightcone"].attrs:
-                m = re.match(r"minimum_redshift_(.*)", name)
-                if m:
-                    self.part_types.append(m.group(1))
+        if comm is None:
+            comm_size = 1
+            comm_rank = 0
+        else:
+            comm_rank = comm.Get_rank()
+            comm_size = comm.Get_size()
 
-        # Generate the full list of filenames
+        # Read the index to determine how many files there are
+        if comm_rank == 0:
+            with h5py.File(self.index_file_name(), "r") as infile:
+                self.nr_mpi_ranks = infile["Lightcone"].attrs["nr_mpi_ranks"][0]
+                self.final_particle_file_on_rank = infile["Lightcone"].attrs["final_particle_file_on_rank"]
+                self.part_types = []
+                for name in infile["Lightcone"].attrs:
+                    m = re.match(r"minimum_redshift_(.*)", name)
+                    if m:
+                        self.part_types.append(m.group(1))
+        else:
+            self.nr_mpi_ranks = None
+            self.final_particle_file_on_rank = None
+            self.part_types = None
+        if comm is not None:
+            self.nr_mpi_ranks = comm.bcast(self.nr_mpi_ranks)
+            self.final_particle_file_on_rank = comm.bcast(self.final_particle_file_on_rank)
+            self.part_types = comm.bcast(self.part_types)
+
+        # Generate the full list of filenames to read on this rank
         self.filenames = []
+        count = 0
         for mpi_rank_nr in range(self.nr_mpi_ranks):
             for file_nr in range(self.final_particle_file_on_rank[mpi_rank_nr]+1):
-                filename = self.particle_file_name(mpi_rank_nr, file_nr)                
-                self.filenames.append(filename)
+                if count % comm_size == comm_rank:
+                    filename = self.particle_file_name(mpi_rank_nr, file_nr)                
+                    self.filenames.append(filename)
+                count += 1
         self.nr_files = len(self.filenames)
 
         # Make an in-memory HDF5 file
-        bio = io.BytesIO()
-        tmpfile = h5py.File(bio, 'w')
-        for ptype in self.part_types:
-            tmpfile.create_group(ptype)
+        if comm_rank == 0:
+            bio = io.BytesIO()
+            tmpfile = h5py.File(bio, 'w')
+            for ptype in self.part_types:
+                tmpfile.create_group(ptype)
 
         # Determine number of particles of each type in each file
-        # and quantities we store for each type
         self.nr_particles_file = {name : [] for name in self.part_types}
-        self.nr_particles_total = {name : 0 for name in self.part_types}
-        self.properties = {}
         for filename in self.filenames:
             with h5py.File(filename, "r") as infile:
                 for ptype in self.part_types:
-                    # Store number of particles of this type
                     if ptype in infile:
                         nr = infile[ptype]["ExpansionFactors"].shape[0]
                     else:
                         nr = 0
-                    self.nr_particles_total[ptype] += nr
-                    # Store quantities associated with this type
-                    if nr > 0 and ptype not in self.properties:
+                    self.nr_particles_file[ptype].append(nr)
+
+        # In MPI mode we now need to combine the results from different ranks
+        if comm is not None:            
+            self.filenames = gather_lists(comm, self.filenames)
+            for ptype in self.part_types:
+                self.nr_particles_file[ptype] = gather_lists(comm, self.nr_particles_file[ptype])
+            self.nr_files = len(self.filenames)
+
+        # Calculate total number of particles of each type
+        self.nr_particles_total = {name : 0 for name in self.part_types}
+        for ptype in self.part_types:
+            self.nr_particles_total[ptype] = sum(self.nr_particles_file[ptype])
+
+        # Determine which quantities exist for each particle type
+        if comm_rank == 0:
+            self.properties = {}
+            # Loop over particle types
+            for ptype in self.part_types:
+                # Loop over files to find one that contains particles of this type
+                for i in range(self.nr_files):
+                    if self.nr_particles_file[ptype][i] > 0:
+                        # This file contains particles of this type
                         self.properties[ptype] = []
+                        infile = h5py.File(self.filenames[i], "r")
                         for name in infile[ptype]:
                             dset = infile[ptype][name]
                             if "a-scale exponent" in dset.attrs:
@@ -96,13 +138,22 @@ class LightconeMetadata:
                                 for attr_name in dset.attrs:
                                     tmpfile[ptype][name].attrs[attr_name] = dset.attrs[attr_name]
                                 self.properties[ptype].append(name)
+                        infile.close()
+                        break
+        else:
+            self.properties = None
+        if comm is not None:
+            self.properties = comm.bcast(self.properties)
 
-                    self.nr_particles_file[ptype].append(nr)
-        
-        # Store image of the in memory file: this puts the information about special data types,
+        # Store image of the in-memory file: this puts the information about special data types,
         # filters etc into a form that we can MPI_Bcast().
-        tmpfile.close()
-        self.file_image = bio.getvalue()
+        if comm_rank == 0:
+            tmpfile.close()
+            self.file_image = bio.getvalue()
+        else:
+            self.file_image = None
+        if comm is not None:
+             self.file_image = comm.bcast(self.file_image)
 
         # Find offset to first particle in each file
         self.offset_file = {}
