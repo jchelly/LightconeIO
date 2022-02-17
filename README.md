@@ -149,15 +149,12 @@ mpi4py and can be run as follows:
 ```
 input_dir=./lightcones/
 output_dir=./indexed_lightcones/
-nr_lightcones=2
 
 mpirun python3 -m mpi4py \
-    lightcone_io_combine_maps.py ${input_dir} ${nr_lightcones} ${output_dir}  
+    lightcone_io_combine_maps.py ${input_dir} ${output_dir} lightcone0 lightcone1 ...  
 ```
 
-This will process all shells for the specified lightcones. The script assumes
-that the lightcone basenames in the swift parameter file are lightcone0, 
-lightcone1, ... etc.
+This will process all shells for the specified lightcones.
 
 There is an example SLURM batch script to run on the FLAMINGO simulations on
 COSMA-8 in scripts/FLAMINGO/combine_L1000N1800.sh.
@@ -191,8 +188,16 @@ nr_redshift_bins=4
 # HEALPix map resolution to use
 nside=32
 
+# HEALPix pixel ordering scheme
+order="nest"
+
+# Whether to sort first by pixel and then by redshift (0)
+# or first by redshift then by pixel (1)
+redshift_first=1
+
 mpirun python3 -m mpi4py lightcone_io_index_particles.py \
-              ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${outdir}
+              ${basedir} ${basename} ${nr_redshift_bins} ${nside} \
+              ${order} ${redshift_first} ${outdir}
 ```
 There is an example SLURM batch script to run on the FLAMINGO simulations on
 COSMA-8 in scripts/FLAMINGO/sort_L1000N1800.sh.
