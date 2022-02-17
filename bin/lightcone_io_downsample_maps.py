@@ -45,6 +45,7 @@ def get_power(name):
         "DopplerB" : MEAN,
         "DM" : MEAN,
     }
+    return power[name]
 
 def downsample_maps(input_basedir, output_basedir, basename, shell_nr, new_nside):
     """
