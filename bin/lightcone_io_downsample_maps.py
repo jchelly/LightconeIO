@@ -91,6 +91,7 @@ def downsample_maps(input_basedir, output_basedir, basename, shell_nr, new_nside
             for attr_name, attr_value in input_dataset.attrs.items():
                 output_dataset.attrs[attr_name] = attr_value
             output_dataset.attrs["nside"] = (new_nside,)
+            output_dataset.attrs["number_of_pixels"] = (len(downsampled_map_data),)
 
     print("Finished shell %d of %s" % (shell_nr, basename))
     outfile.close()
