@@ -18,11 +18,17 @@ if __name__ == "__main__":
     basename        : name of the lightcone to process
     nr_redshift_bins: number of redshift bins to use to bin particles
     nside           : HEALPpix map resolution to use to bin particles
+    lossy           : (optional) 1=use lossy compression, 0=lossless only
+
+    If a dataset in the input uses lossy compression and lossy=1, then
+    that dataset will use lossy compression in the output. Note that this
+    will change the values. If lossy=0, then lossy compression is not used
+    for any dataset.
 """
 
     args = {}
     if comm_rank == 0:
-        if len(sys.argv) != 8:
+        if len(sys.argv) != 8 and len(sys.argv) != 9:
             print(usage)
             args = None
         else:
@@ -33,6 +39,10 @@ if __name__ == "__main__":
             args["order"]            = sys.argv[5]
             args["redshift_first"]   = bool(int(sys.argv[6]))
             args["outdir"]           = sys.argv[7]
+            if len(sys.argv) == 9:
+                args["lossy"] = bool(int(sys.argv[8]))
+            else:
+                args["lossy"] = True
 
     args = comm.bcast(args)
     if args is None:
@@ -46,7 +56,8 @@ if __name__ == "__main__":
     if comm_rank == 0:
         print("Sorting lightcone")    
     lightcone.write_sorted_lightcone(args["outdir"], args["nr_redshift_bins"],
-                                     args["nside"], args["order"], args["redshift_first"])
+                                     args["nside"], args["order"], args["redshift_first"],
+                                     args["lossy"])
 
     comm.barrier()
     if comm_rank == 0:

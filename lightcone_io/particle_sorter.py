@@ -224,7 +224,7 @@ class LightconeSorter:
         return z_bins, bins, sort_index
 
     def write_sorted_lightcone(self, new_basedir, nr_redshift_bins, nside,
-                               order="ring", redshift_first=True):
+                               order="ring", redshift_first=True, lossy=True):
         """
         Write out a new lightcone with particles sorted by bin index
         """
@@ -310,6 +310,11 @@ class LightconeSorter:
                     self.message("  writing %s" % name)
                     dtype_id = dset_in.id.get_type()
                     dcpl_id = dset_in.id.get_create_plist()
+                    if not(lossy):
+                        try:
+                            dcpl_id.remove_filter(h5py.h5z.FILTER_SCALEOFFSET)
+                        except RuntimeError:
+                            pass
                     shape = (local_nr_particles[comm_rank],)+dset_in.shape[1:]
                     lm.create_dataset(outfile[ptype], name, dtype_id, shape, dcpl_id)
                     outfile[ptype][name][...] = data

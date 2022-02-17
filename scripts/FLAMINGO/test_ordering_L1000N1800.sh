@@ -33,6 +33,9 @@ order="nest"
 # Whether to sort by redshift first then pixel (1) or pixel first then redshift (0)
 redshift_first=1
 
+# Whether to allow lossless compression in the output
+lossy=0
+
 # Output directory
 outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/${name}/lightcones_z_first_nest
 
@@ -40,4 +43,4 @@ outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/${name}/lightcones
 script=`which lightcone_io_index_particles.py`
 
 mpirun python3 -u -m mpi4py ${script} \
-    ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${order} ${redshift_first} ${outdir}
+    ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${order} ${redshift_first} ${outdir} ${lossy}
