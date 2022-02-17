@@ -107,7 +107,7 @@ class IndexedLightconeParticleType:
         Return indexes of all healpix pixels within radius of vector
         """
         nside = self.index["nside"]
-        order = self.index["order"] if "order" in self.index else "ring"
+        order = self.index["order"].decode() if "order" in self.index else "ring"
         if order == "nest":
             nest=True
         elif order == "ring":
@@ -339,7 +339,7 @@ class IndexedLightcone(collections.abc.Mapping):
             for type_name in infile["Cells"]:
                 index = {}
                 for name in infile["Cells"][type_name]:
-                    index[name] = infile["Cells"][type_name][name][...]
+                    index[name] = infile["Cells"][type_name][name][()]
                 self.particle_types[type_name] = IndexedLightconeParticleType(type_name, metadata, index, units, filenames)
 
     def __getitem__(self, key):

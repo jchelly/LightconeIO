@@ -22,7 +22,7 @@ if __name__ == "__main__":
 
     args = {}
     if comm_rank == 0:
-        if len(sys.argv) != 6:
+        if len(sys.argv) != 8:
             print(usage)
             args = None
         else:
