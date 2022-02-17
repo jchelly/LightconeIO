@@ -119,7 +119,8 @@ class LightconeMetadata:
         for ptype in self.part_types:
             self.nr_particles_total[ptype] = sum(self.nr_particles_file[ptype])
 
-        # Determine which quantities exist for each particle type
+        # Determine which quantities exist for each particle type by
+        # opening a file which contains particles of each type.
         if comm_rank == 0:
             self.properties = {}
             # Loop over particle types
