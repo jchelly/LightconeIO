@@ -37,7 +37,7 @@ class LightconeSorter:
         self.basename = basename
 
         # Determine number of particles per file etc
-        md = lm.LightconeMetadata(basedir, basename, comm)
+        self.metadata = lm.LightconeMetadata(basedir, basename, comm)
         self.metadata.open_image()
 
         # Assign equally sized, contiguous ranges of particles to MPI ranks
