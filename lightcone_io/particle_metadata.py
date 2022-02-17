@@ -36,6 +36,12 @@ class LightconeMetadata:
     def particle_file_name(self, mpi_rank_nr, file_nr, basedir=None):
         if basedir is None:
             basedir = self.basedir
+
+        # HACK for FLAMINGO L2800N5040 HYDRO_FIDUCIAL
+        if basedir == "/cosma8/data/dp004/flamingo/Runs/L2800N5040/HYDRO_FIDUCIAL/lightcones/":
+            if file_nr <= 80:
+                basedir = "/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/L2800N5040/HYDRO_FIDUCIAL/lightcones/"
+
         return ("%(basedir)s/%(basename)s_particles/%(basename)s_%(file_nr)04d.%(mpi_rank_nr)d.hdf5" %
                 {"basedir" : basedir, "basename" : self.basename,
                  "file_nr" : file_nr, "mpi_rank_nr" : mpi_rank_nr})
