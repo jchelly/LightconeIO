@@ -36,8 +36,8 @@ def read_particle_file(fname, ptype):
     names = []
     excluded = []
     for name in f[ptype]:
-       if hasattr(f[ptype][name], "dtype"):
-           names.append(name)
+      if hasattr(f[ptype][name], "dtype"):
+          names.append(name)
 
     global reported
     if not(reported) and comm_rank==1:
@@ -100,17 +100,42 @@ if __name__ == "__main__":
 
     from mpi4py import MPI
     from mpi4py.futures import MPICommExecutor
+    
+    comm = MPI.COMM_WORLD
+    comm_rank = comm.Get_rank()
+    comm_size = comm.Get_size()
+
+    # Get command line args
+    args = {}
+    if comm_rank == 0:
+        args["basedir"]  = sys.argv[1]
+        args["basename"] = sys.argv[2]
+        args["ptype"]    = sys.argv[3]
+    args = comm.bcast(args)
+
+    # Make the full list of files to hash
+    if comm_rank == 0:
+        index_filename = "%s/%s_index.hdf5" % (args["basedir"], args["basename"])
+        with h5py.File(index_filename, "r") as infile:
+            nr_mpi_ranks = int(infile["Lightcone"].attrs["nr_mpi_ranks"])
+            final_particle_file_on_rank = infile["Lightcone"].attrs["final_particle_file_on_rank"]
+        filenames = []
+        for rank_nr in range(nr_mpi_ranks):
+            for file_nr in range(final_particle_file_on_rank[rank_nr]+1):
+                filename = "%s/%s_particles/%s_%04d.%d.hdf5" % (args["basedir"],
+                                                                args["basename"],
+                                                                args["basename"],
+                                                                file_nr, rank_nr,)
+                filenames.append(filename)
+    else:
+        filenames = None
+    filenames = comm.bcast(filenames)
 
     with MPICommExecutor(MPI.COMM_WORLD, root=0) as executor:
         if executor is not None:
 
-            # Get list of files to hash:
-            # Second arg should be a glob expression.
-            ptype = sys.argv[1]
-            filenames = glob.glob(sys.argv[2])
-
             # Hash the files
-            hashes = executor.map(hash_particle_file, filenames, (ptype,)*len(filenames))
+            hashes = executor.map(hash_particle_file, filenames, (args["ptype"],)*len(filenames))
 
             # Combine hashes from files
             hash_xor = bytearray(hashlib.sha256().digest_size)

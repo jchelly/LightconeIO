@@ -1,6 +1,6 @@
 #!/bin/bash -l
 #
-#SBATCH --nodes=1
+#SBATCH --nodes=2
 #SBATCH --tasks-per-node=128
 #SBATCH --cpus-per-task=1
 #SBATCH -o ./logs/L1000N1800/hash_%x.lightcone%a.indexed.out
@@ -16,11 +16,9 @@ module load python/3.10.1
 
 sim="L1000N1800/${SLURM_JOB_NAME}"
 lightcone_nr=${SLURM_ARRAY_TASK_ID}
+
+basedir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones_z_first_nest/
 basename=lightcone${lightcone_nr}
 ptype="BH"
 
-# Find all of the particle files
-filenames="/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones_z_first_nest/${basename}_particles/*.hdf5"
-
-# Hash the contents
-mpirun python3 -u -m mpi4py ../hash_particles.py ${ptype} "${filenames}"
+mpirun python3 -u -m mpi4py ../hash_particles.py ${basedir} ${basename} ${ptype}
