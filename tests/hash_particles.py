@@ -16,21 +16,28 @@ def read_particle_file(fname, ptype):
     Generator which returns particle data in chunks
     in the form of a numpy record array.
     """
-    block_size = 1000000
+    block_size = 10000000
 
     f = h5py.File(fname, "r")
     group  = f[ptype]
 
     # Reordering a dataset with the scale-offset filter changes the values,
     # so exclude these
+    #names = []
+    #excluded = []
+    #for name in f[ptype]:
+    #    if hasattr(f[ptype][name], "dtype"):
+    #        if f[ptype][name].scaleoffset is None:
+    #            names.append(name)
+    #        else:
+    #            excluded.append(name)
+
+    # Use all datasets
     names = []
     excluded = []
     for name in f[ptype]:
-        if hasattr(f[ptype][name], "dtype"):
-            if f[ptype][name].scaleoffset is None:
-                names.append(name)
-            else:
-                excluded.append(name)
+       if hasattr(f[ptype][name], "dtype"):
+           names.append(name)
 
     global reported
     if not(reported) and comm_rank==1:
@@ -97,9 +104,10 @@ if __name__ == "__main__":
     with MPICommExecutor(MPI.COMM_WORLD, root=0) as executor:
         if executor is not None:
 
-            # Get list of files to hash
+            # Get list of files to hash:
+            # Second arg should be a glob expression.
             ptype = sys.argv[1]
-            filenames = sys.argv[2:]
+            filenames = glob.glob(sys.argv[2])
 
             # Hash the files
             hashes = executor.map(hash_particle_file, filenames, (ptype,)*len(filenames))

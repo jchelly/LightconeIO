@@ -1,13 +1,13 @@
 #!/bin/bash -l
 #
-#SBATCH --nodes=125
-#SBATCH --tasks-per-node=32
+#SBATCH --nodes=60
+#SBATCH --tasks-per-node=64
 #SBATCH --cpus-per-task=1
 #SBATCH -o ./logs/L2800N5040/index_%x.lightcone%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
 #SBATCH -t 72:00:00
-##SBATCH --reservation=jlvc76_53
+#SBATCH --reservation=jlvc76_53
 
 module purge
 module load python/3.10.1
