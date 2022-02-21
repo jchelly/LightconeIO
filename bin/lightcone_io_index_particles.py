@@ -28,7 +28,7 @@ if __name__ == "__main__":
 
     args = {}
     if comm_rank == 0:
-        if len(sys.argv) != 8 and len(sys.argv) != 9:
+        if len(sys.argv) < 8 or len(sys.argv) > 10:
             print(usage)
             args = None
         else:
@@ -39,14 +39,18 @@ if __name__ == "__main__":
             args["order"]            = sys.argv[5]
             args["redshift_first"]   = bool(int(sys.argv[6]))
             args["outdir"]           = sys.argv[7]
-            if len(sys.argv) == 9:
+            if len(sys.argv) >= 9:
                 args["lossy"] = bool(int(sys.argv[8]))
             else:
                 args["lossy"] = True
+            if len(sys.argv) == 10:
+                args["chunksize"] = int(sys.argv[9])
+            else:
+                args["chunksize"] = 0
 
     args = comm.bcast(args)
     if args is None:
-        comm.abort()
+        comm.Abort()
 
     if comm_rank == 0:
         print("Reading metadata")
@@ -57,7 +61,7 @@ if __name__ == "__main__":
         print("Sorting lightcone")    
     lightcone.write_sorted_lightcone(args["outdir"], args["nr_redshift_bins"],
                                      args["nside"], args["order"], args["redshift_first"],
-                                     args["lossy"])
+                                     args["lossy"], args["chunksize"])
 
     comm.barrier()
     if comm_rank == 0:

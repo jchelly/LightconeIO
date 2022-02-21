@@ -34,13 +34,18 @@ order="nest"
 redshift_first=1
 
 # Whether to allow lossless compression in the output
-lossy=0
+lossy=1
+
+# Override chunk size
+#chunksize=1048576
+# Leave chunksize alone!
+chunksize=0
 
 # Output directory
-outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/${name}/lightcones_z_first_nest
+outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/${name}/lightcones_z_first_nest/
 
 # Assume script is in $PATH
 script=`which lightcone_io_index_particles.py`
 
 mpirun python3 -u -m mpi4py ${script} \
-    ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${order} ${redshift_first} ${outdir} ${lossy}
+    ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${order} ${redshift_first} ${outdir} ${lossy} ${chunksize}
