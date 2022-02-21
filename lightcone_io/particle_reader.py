@@ -109,12 +109,14 @@ class IndexedLightconeParticleType:
         nside = self.index["nside"]
         order = self.index["order"].decode() if "order" in self.index else "ring"
         if order == "nest":
-            nest=True
+            nest = True
         elif order == "ring":
-            nest=False
+            nest = False
         else:
             raise Exception("Invalid order parameter")
-        return hp.query_disc(nside, vector, radius, inclusive=True, nest=nest)
+        pixels = hp.query_disc(nside, vector, radius, inclusive=True, nest=nest)
+        pixels.sort()
+        return pixels
 
     def get_cell_indexes_from_bins(self, redshift_bins, healpix_bins):
         """
@@ -124,13 +126,15 @@ class IndexedLightconeParticleType:
         nr_pixels_to_read = len(healpix_bins)
         nr_redshifts_to_read = len(redshift_bins)
         nr_redshift_bins = len(self.index["redshift_bins"]) - 1
-        redshift_bin_index = np.tile(redshift_bins, nr_pixels_to_read)
-        healpix_bin_index = np.repeat(healpix_bins, nr_redshifts_to_read)
         nr_pixels = hp.pixelfunc.nside2npix(self.index["nside"])
         redshift_first = self.index["redshift_first"] if "redshift_first" in self.index else 0
         if redshift_first:
+            redshift_bin_index = np.repeat(redshift_bins, nr_pixels_to_read)
+            healpix_bin_index = np.tile(healpix_bins, nr_redshifts_to_read)
             cells_to_read = healpix_bin_index + (redshift_bin_index * nr_pixels)
         else:
+            redshift_bin_index = np.tile(redshift_bins, nr_pixels_to_read)
+            healpix_bin_index = np.repeat(healpix_bins, nr_redshifts_to_read)
             cells_to_read = redshift_bin_index + (healpix_bin_index * nr_redshift_bins)        
         return cells_to_read
 
