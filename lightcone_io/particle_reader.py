@@ -270,11 +270,6 @@ class IndexedLightconeParticleType:
         cell_size = self.index["cell_length"][cells_to_read]
         return np.sum(cell_size)
 
-    def read(self, property_names, vector=None, radius=None, redshift_range=None):
-
-        cells_to_read = self.get_cell_indexes_from_vector_radius_redshift(vector, radius, redshift_range)
-        return self.read_cells(property_names, cells_to_read)
-
     def iterate_chunks(self, property_names, vector=None, radius=None, redshift_range=None,
                        max_particles=1048576):
 
@@ -303,6 +298,84 @@ class IndexedLightconeParticleType:
 
             # Advance to the nex set of cells
             i1 = i2
+
+    def read(self, property_names, vector=None, radius=None, redshift_range=None):
+
+        cells_to_read = self.get_cell_indexes_from_vector_radius_redshift(vector, radius, redshift_range)
+        return self.read_cells(property_names, cells_to_read)
+
+    def read_exact(self, property_names, vector=None, radius=None, redshift_range=None):
+
+        if vector is not None:
+            vector = np.asarray(vector, dtype=float)
+
+        cells_to_read = self.get_cell_indexes_from_vector_radius_redshift(vector, radius, redshift_range)
+
+        # Filtering on angle is only implemented for radii < 90 degrees
+        if radius is not None and radius > 0.5*np.pi:
+            raise Exception("Angular radius must be <= pi/2 radians")
+
+        # Make a dict to store the output.
+        data = {name : [] for name in property_names}
+
+        # Ensure we're reading the expansion factors if we need them
+        keep_expansion = "ExpansionFactors" in property_names
+        if redshift_range is not None and "ExpansionFactors" not in property_names:
+            property_names = list(property_names) + ["ExpansionFactors",]
+
+        # Ensure we're reading the coordinates if we need them
+        keep_coordinates = "Coordinates" in property_names
+        if radius is not None and "Coordinates" not in property_names:
+            property_names = list(property_names) + ["Coordinates",]
+
+        # Then we'll read the data in chunks and filter one chunk at a time
+        max_particles = 10*1024*1024 # Use large-ish reads for efficiency
+        for chunk in self.iterate_chunks(property_names, vector, radius, redshift_range, max_particles):
+
+            # Find number of particles in this chunk
+            nr_part = chunk[property_names[0]].shape[0]
+
+            # Filter particles on redshift
+            if redshift_range is not None:
+                a_min = 1.0/(1.0+redshift_range[1])
+                a_max = 1.0/(1.0+redshift_range[0])
+                keep = (chunk["ExpansionFactors"]>=a_min) & (chunk["ExpansionFactors"]<=a_max)
+            else:
+                keep = np.ones(nr_part, dtype=bool)
+
+            # Filter particles on radius
+            if radius is not None:
+                # Get normalized view direction vector
+                norm_vector = np.asarray(vector, dtype=float)
+                norm_vector = norm_vector / np.sqrt(np.sum(norm_vector**2))
+                # Get 3D distance squared for each particle
+                pos = chunk["Coordinates"]
+                r2 = np.sum(pos**2, axis=1)
+                # Find angle between view vector and each particle
+                cos2_theta = (np.sum(vector[None,:]*pos, axis=1)**2)/r2
+                keep = keep & (cos2_theta >= np.cos(radius)**2)
+                del pos
+                del r2
+                del cos2_theta
+
+            # Discard expansion factors if we were not asked to read them
+            if keep_expansion == False and "ExpansionFactors" in chunk:
+                del chunk["ExpansionFactors"]
+
+            # Discard coordinates if we were not asked to read them
+            if keep_coordinates == False and "Coordinates" in chunk:
+                del chunk["Coordinates"]
+
+            # Store all remaining properties
+            for name in data:
+                data[name].append(chunk[name][keep,...])
+            del keep
+
+        # Merge chunks
+        for name in data:
+            data[name] = np.concatenate(data[name])
+
+        return data
 
 
 class IndexedLightcone(collections.abc.Mapping):
