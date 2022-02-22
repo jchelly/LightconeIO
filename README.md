@@ -123,7 +123,16 @@ are read in. If vector=None and radius=None then the whole sky is read in.
 
 Note that this may return particles outside the specified region because the
 indexed lightcone is stored in chunks and all chunks overlapping the region
-are returned.
+are returned. There is also a read_exact() method which filters out the extra
+particles. E.g.:
+
+```
+data = lightcone["DM"].read_exact(property_names, vector, radius, redshift_range)
+```
+This is likely to be slower because it's necessary to read in the coordinates for
+spatial selection and the expansion factors for redshift selection even if
+these quantities are not being returned. Computing the angles and redshifts
+adds some CPU overhead too.
 
 There is also a way to iterate through the selected particles without reading
 them all into memory:
