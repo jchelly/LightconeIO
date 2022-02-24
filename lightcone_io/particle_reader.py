@@ -25,8 +25,6 @@ else:
 
 def merge_cells(cell_offset, cell_length):
 
-    max_length = 10*1024*1024
-
     keep = cell_length > 0
     cell_length = cell_length[keep]
     cell_offset = cell_offset[keep]
@@ -34,7 +32,7 @@ def merge_cells(cell_offset, cell_length):
     ncells = len(cell_length)
     j = 0
     for i in range(1,ncells):
-        if (cell_offset[i] == cell_offset[j]+cell_length[j] and cell_length[i]+cell_length[j] <= max_length):
+        if (cell_offset[i] == cell_offset[j]+cell_length[j]):
             cell_length[j] += cell_length[i]
             cell_length[i] = 0
         else:
