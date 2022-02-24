@@ -2,6 +2,7 @@
 
 import re
 import io
+import os.path
 
 import numpy as np
 
@@ -38,9 +39,20 @@ class LightconeMetadata:
             basedir = self.basedir
 
         # HACK for FLAMINGO L2800N5040 HYDRO_FIDUCIAL
+        filename1 = ("%(basedir)s/%(basename)s_particles/%(basename)s_%(file_nr)04d.%(mpi_rank_nr)d.hdf5" %
+                     {"basedir" : basedir, "basename" : self.basename,
+                      "file_nr" : file_nr, "mpi_rank_nr" : mpi_rank_nr})
         if basedir == "/cosma8/data/dp004/flamingo/Runs/L2800N5040/HYDRO_FIDUCIAL/lightcones/":
             if file_nr <= 80:
                 basedir = "/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/L2800N5040/HYDRO_FIDUCIAL/lightcones/"
+                filename2 = ("%(basedir)s/%(basename)s_particles/%(basename)s_%(file_nr)04d.%(mpi_rank_nr)d.hdf5" %
+                             {"basedir" : basedir, "basename" : self.basename,
+                              "file_nr" : file_nr, "mpi_rank_nr" : mpi_rank_nr})
+                if os.path.exists(filename2):
+                    return filename2
+                else:
+                    return filename1
+        # End of hack
 
         return ("%(basedir)s/%(basename)s_particles/%(basename)s_%(file_nr)04d.%(mpi_rank_nr)d.hdf5" %
                 {"basedir" : basedir, "basename" : self.basename,
