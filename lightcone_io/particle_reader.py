@@ -12,6 +12,7 @@ try:
 except ImportError:
     unyt=None
     raise ImportWarning("Unable to import unyt. Will not return unit info.")
+    concatenate = np.concatenate
 else:
     def units_from_attributes(dset):
         cgs_factor = dset.attrs["Conversion factor to CGS (not including cosmological corrections)"][0]
@@ -21,6 +22,7 @@ else:
         U_T = dset.attrs["U_T exponent"][0]
         U_t = dset.attrs["U_t exponent"][0]
         return cgs_factor * (unyt.A**U_I) * (unyt.cm**U_L) * (unyt.g**U_M) * (unyt.K**U_T) * (unyt.s**U_t) 
+    concatenate = unyt.array.uconcatenate
     
 
 def merge_cells(cell_offset, cell_length):
@@ -371,7 +373,7 @@ class IndexedLightconeParticleType:
 
         # Merge chunks
         for name in data:
-            data[name] = np.concatenate(data[name])
+            data[name] = concatenate(data[name])
 
         return data
 
