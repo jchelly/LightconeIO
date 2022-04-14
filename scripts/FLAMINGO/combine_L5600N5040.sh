@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=70
 #SBATCH --cpus-per-task=1
-#SBATCH -o ./logs/L2800N5040/combine_maps.%x.lightcone%a.out
+#SBATCH -o ./logs/L5600N5040/combine_maps.%x.lightcone%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
 #SBATCH -t 72:00:00
@@ -13,7 +13,7 @@ module purge
 module load gnu_comp/11.1.0 openmpi/4.1.1
 module load python/3.10.1
 
-sim="L2800N5040/${SLURM_JOB_NAME}"
+sim="L5600N5040/${SLURM_JOB_NAME}"
 basename=lightcone${SLURM_ARRAY_TASK_ID}
 
 input_dir=/cosma8/data/dp004/flamingo/Runs/${sim}/lightcones/
