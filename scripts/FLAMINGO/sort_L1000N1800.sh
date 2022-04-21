@@ -20,7 +20,7 @@ name=${SLURM_JOB_NAME}
 lightcone_nr=${SLURM_ARRAY_TASK_ID}
 
 # Input lightcone
-basedir=/cosma8/data/dp004/jlvc76/FLAMINGO/ScienceRuns/L1000N1800/${name}/lightcones/
+basedir=/cosma8/data/dp004/flamingo/Runs/L1000N1800/${name}/lightcones/
 basename=lightcone${lightcone_nr}
 
 # Number of redshift bins

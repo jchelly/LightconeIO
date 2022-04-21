@@ -15,7 +15,7 @@ module load python/3.10.1
 
 sim="L1000N1800/${SLURM_JOB_NAME}"
 
-input_dir=/cosma8/data/dp004/jlvc76/FLAMINGO/ScienceRuns/${sim}/lightcones/
+input_dir=/cosma8/data/dp004/flamingo/Runs/${sim}/lightcones/
 output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones/
 
 # Assume script is in $PATH
