@@ -6,6 +6,7 @@ import os
 import shutil
 import numpy as np
 import h5py
+import yaml
 from mpi4py import MPI
 from mpi4py.futures import MPICommExecutor
 
@@ -67,27 +68,52 @@ def correct_shell_file(indir, basename, outdir, shell_nr, z_central):
     print("Shell %d done" % shell_nr)
 
 
-def correct_maps_mpi(indir, shell_redshifts, outdir, basenames):
+def correct_maps_mpi(indir, yml_file, outdir, basenames):
 
     if comm_rank == 0:
 
-        # Read in the shell redshifts
-        with open(shell_redshifts, "r") as f:
-            header = f.readline()
-            # Check for the expected header
-            if header.strip() != "# Minimum redshift, Maximum redshift":
-                raise Exception("Shell radii must be specified as redshifts!")
-            # Read radii
-            z_central = []
-            while True:
-                line = f.readline().strip()
-                if len(line) == 0:
-                    break
-                else:
-                    z_central.append(0.5*sum([float(col) for col in line.split(",")]))
+        # Get simulation directory absolute path
+        sim_dir = os.path.abspath(os.path.dirname(yml_file))
 
-        z_central = np.asarray(comm.bcast(z_central), dtype=float)
-        print("Found %d shell redshifts" % len(z_central))
+        # Read simulation config file
+        config = yaml.load(open(yml_file, "r"), yaml.loader.SafeLoader)
+        
+        # Find paths to the shell redshift lists:
+        # May be a different file for each ligthcone
+        radius_file = {}
+        z_central = {}
+        for basename in basenames:
+            radius_file[basename] = None
+            for i in range(8):
+                section = "Lightcone%d" % i
+                if section in config and config[section]["basename"] == basename:
+                    radius_file[basename] = config[section]["radius_file"]
+                    break
+            if radius_file[basename] is None:
+                radius_file[basename] = config["LightconeCommon"]["radius_file"]
+
+            # Get absolute path to radius file
+            if not os.path.isabs(radius_file[basename]):
+                radius_file[basename] = os.path.normpath(os.path.join(sim_dir, radius_file[basename]))
+            print("Taking shell redshifts for %s from: %s" % (basename, radius_file[basename]))
+
+            # Read in the shell redshifts
+            with open(radius_file[basename], "r") as f:
+                header = f.readline()
+                # Check for the expected header
+                if header.strip() != "# Minimum redshift, Maximum redshift":
+                    raise Exception("Shell radii must be specified as redshifts!")
+                # Read radii
+                z_central[basename] = []
+                while True:
+                    line = f.readline().strip()
+                    if len(line) == 0:
+                        break
+                    else:
+                        z_central[basename].append(0.5*sum([float(col) for col in line.split(",")]))
+
+            z_central[basename] = np.asarray(z_central[basename], dtype=float)
+            print("  Found %d shell redshifts" % len(z_central[basename]))
     
         # Accumulate correct_shell_file() arguments needed to process each shell
         args = []
@@ -99,6 +125,8 @@ def correct_maps_mpi(indir, shell_redshifts, outdir, basenames):
                 nr_files_per_shell = int(infile["Lightcone"].attrs["nr_files_per_shell"])
             if nr_files_per_shell != 1:
                 raise Exception("Can only correct single file outputs!")
+            if nr_shells != len(z_central[basename]):
+                raise Exception("Wrong number of shell redshifts!")
 
             # Ensure the output directory exists
             try:
@@ -112,7 +140,7 @@ def correct_maps_mpi(indir, shell_redshifts, outdir, basenames):
             shutil.copyfile(infile, outfile)
 
             # Store arguments to process this shell
-            args += [(indir, basename, outdir, shell_nr, z_central) for shell_nr in range(nr_shells)]
+            args += [(indir, basename, outdir, shell_nr, z_central[basename]) for shell_nr in range(nr_shells)]
 
     # Make sure all output dirs have been created
     comm.barrier()
@@ -123,7 +151,7 @@ def correct_maps_mpi(indir, shell_redshifts, outdir, basenames):
             executor.starmap(correct_shell_file, args)
 
     comm.barrier()
-    print("All lightcones done.")
+    print("Lightcones done: ", basenames)
 
 
 if __name__ == "__main__":
@@ -145,7 +173,7 @@ if __name__ == "__main__":
             args = None
         else:
             args["indir"] = sys.argv[1]
-            args["shell_redshifts"] = sys.argv[2]
+            args["yml_file"] = sys.argv[2]
             args["outdir"] = sys.argv[3]
             args["basenames"] = sys.argv[4:]
     args = comm.bcast(args)
@@ -154,7 +182,7 @@ if __name__ == "__main__":
         MPI.Finalize()
         sys.exit(0)
 
-    correct_maps_mpi(args["indir"], args["shell_redshifts"], args["outdir"], args["basenames"])
+    correct_maps_mpi(args["indir"], args["yml_file"], args["outdir"], args["basenames"])
 
     comm.barrier()
     if comm_rank == 0:

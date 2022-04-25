@@ -17,8 +17,9 @@ sim="L1000N1800/${SLURM_JOB_NAME}"
 lightcone_nr=${SLURM_ARRAY_TASK_ID}
 basename=lightcone${lightcone_nr}
 
-input_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones/
-output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones_downsampled/
+sim_dir=/cosma8/data/dp004/flamingo/Runs/${sim}/
+input_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones_downsampled/
+output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones_downsampled_corrected/
 
 \mkdir -p ${output_dir}
 lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
@@ -26,7 +27,7 @@ lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
 # Assume script is in $PATH
 script=`which lightcone_io_downsample_maps.py`
 
-# Find file with shell redshifts
-shell_redshifts=${input_dir}/../shell_redshifts_z3.txt
+# Find simulation config file
+yml_file=${sim_dir}/flamingo*.yml
 
-mpirun python3 -m mpi4py ${script} ${input_dir} ${shell_redshifts} ${output_dir} ${basename}
+mpirun python3 -m mpi4py ${script} ${input_dir} ${yml_file} ${output_dir} ${basename}
