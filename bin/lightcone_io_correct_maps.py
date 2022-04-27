@@ -79,7 +79,7 @@ def correct_maps_mpi(indir, yml_file, outdir, basenames):
         config = yaml.load(open(yml_file, "r"), yaml.loader.SafeLoader)
         
         # Find paths to the shell redshift lists:
-        # May be a different file for each ligthcone
+        # May be a different file for each lightcone
         radius_file = {}
         z_central = {}
         for basename in basenames:
@@ -149,9 +149,6 @@ def correct_maps_mpi(indir, yml_file, outdir, basenames):
     with MPICommExecutor(comm, root=0) as executor:
         if executor is not None:
             executor.starmap(correct_shell_file, args)
-
-    comm.barrier()
-    print("Lightcones done: ", basenames)
 
 
 if __name__ == "__main__":

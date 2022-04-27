@@ -3,10 +3,10 @@
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=128
 #SBATCH --cpus-per-task=1
-#SBATCH -o ./logs/L1000N1800/correct_%x.lightcone%a.out
+#SBATCH -o ./logs/L1000N1800/correct_ds_%x.lightcone%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
-#SBATCH -t 72:00:00
+#SBATCH -t 2:00:00
 #
 
 module purge
@@ -19,13 +19,13 @@ basename=lightcone${lightcone_nr}
 
 sim_dir=/cosma8/data/dp004/flamingo/Runs/${sim}/
 input_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones_downsampled/
-output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones_downsampled_corrected/
+output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/corrected_downsampled_maps/
 
 \mkdir -p ${output_dir}
 lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
 
 # Assume script is in $PATH
-script=`which lightcone_io_downsample_maps.py`
+script=`which lightcone_io_correct_maps.py`
 
 # Find simulation config file
 yml_file=${sim_dir}/flamingo*.yml
