@@ -47,9 +47,13 @@ def correct_shell_file(indir, basename, outdir, shell_nr, z_central):
         dset.attrs["Correction applied"] = "Multiplied by 1+(z_min+z_max)/2 to compensate for bug in original output"
         dset.attrs["Correction factor"] = fac
         dset.attrs["Central redshift assumed for correction"] = z_central[shell_nr]
-        data = dset[...]
-        data *= fac
-        dset[...] = data
+        nchunk=100*1024*1024
+        ntot = dset.shape[0]
+        for offset in range(0, ntot, nchunk):
+            n = min(nchunk, ntot-offset)
+            data = dset[offset:offset+n,...]
+            data *= fac
+            dset[offset:offset+n,...] = data
 
     # DM needs to be multiplied by 1/(1+z)
     if "DM" in f:
@@ -60,9 +64,13 @@ def correct_shell_file(indir, basename, outdir, shell_nr, z_central):
         dset.attrs["Correction applied"] = "Multiplied by 1/(1+(z_min+z_max)/2) to compensate for bug in original output"
         dset.attrs["Correction factor"] = fac
         dset.attrs["Central redshift assumed for correction"] = z_central[shell_nr]
-        data = dset[...]
-        data *= fac
-        dset[...] = data
+        nchunk=100*1024*1024
+        ntot = dset.shape[0]
+        for offset in range(0, ntot, nchunk):
+            n = min(nchunk, ntot-offset)
+            data = dset[offset:offset+n,...]
+            data *= fac
+            dset[offset:offset+n,...] = data
 
     f.close()
     print("Shell %d done" % shell_nr)
