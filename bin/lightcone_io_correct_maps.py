@@ -31,7 +31,10 @@ def correct_shell_file(indir, basename, outdir, shell_nr, z_central):
 
     # Copy the file
     #shutil.copyfile(infile, outfile)
-    subprocess.run(["cp", infile, outfile], check=True)
+    #subprocess.run(["cp", infile, outfile], check=True)
+
+    # Move the file
+    subprocess.run(["mv", infile, outfile], check=True)
 
     #
     # Now need to apply corrections
@@ -94,7 +97,7 @@ def correct_maps_mpi(indir, yml_file, outdir, basenames):
             radius_file[basename] = None
             for i in range(8):
                 section = "Lightcone%d" % i
-                if section in config and config[section]["basename"] == basename:
+                if section in config and config[section]["basename"] == basename and "radius_file" in config[section]:
                     radius_file[basename] = config[section]["radius_file"]
                     break
             if radius_file[basename] is None:
