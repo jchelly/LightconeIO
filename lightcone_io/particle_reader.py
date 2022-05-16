@@ -51,13 +51,20 @@ class IndexedLightconeParticleType:
     """
     Class to read a single particle type from a lightcone
     """
-    def __init__(self, type_name, metadata, index, units, filenames):
+    def __init__(self, type_name, metadata, index, units, filenames, comm=None):
 
         self.type_name = type_name
         self.metadata  = metadata
         self.index     = index
         self.units     = units
         self.filenames = filenames
+        self.comm      = comm
+        if comm is not None:
+            self.comm_rank = comm.Get_rank()
+            self.comm_size = comm.Get_size()
+        else:
+            self.comm_rank = 0
+            self.comm_size = 1
 
         # Find range of particles in each file
         first_particle_in_file = index["first_particle_in_file"]
@@ -267,6 +274,8 @@ class IndexedLightconeParticleType:
     def count_particles(self, vector=None, radius=None, redshift_range=None):
 
         cells_to_read = self.get_cell_indexes_from_vector_radius_redshift(vector, radius, redshift_range)
+        if self.comm is not None:
+            cells_to_read = self.split_cells_by_mpi_rank(cells_to_read)
         cell_size = self.index["cell_length"][cells_to_read]
         return np.sum(cell_size)
 
@@ -299,10 +308,34 @@ class IndexedLightconeParticleType:
             # Advance to the nex set of cells
             i1 = i2
 
+    def split_cells_by_mpi_rank(self, cells_to_read):
+
+        # Find number of cells to read on each MPI rank
+        nr_per_rank = np.zeros(self.comm_size, dtype=int)
+        nr_per_rank[...] = len(cells_to_read) // self.comm_size
+        nr_per_rank[:len(cells_to_read) % self.comm_size] += 1
+        assert sum(nr_per_rank) == len(cells_to_read)
+
+        # TODO: handle the case where some ranks have no data
+        if np.any(nr_per_rank) == 0:
+            raise RuntimeError("MPI rank was assigned no cells!")
+
+        # Find offset to first cell on each rank
+        offset_on_rank = np.cumsum(nr_per_rank) - nr_per_rank
+
+        # Return range to read on this rank
+        i1 = offset_on_rank[self.comm_rank]
+        i2 = i1 + nr_per_rank[self.comm_rank]
+        return cells_to_read[i1:i2]
+
     def read(self, property_names, vector=None, radius=None, redshift_range=None):
 
+        # Read data for the selected cells
         cells_to_read = self.get_cell_indexes_from_vector_radius_redshift(vector, radius, redshift_range)
-        return self.read_cells(property_names, cells_to_read)
+        if self.comm is not None:
+            cells_to_read = self.split_cells_by_mpi_rank(cells_to_read)
+        data = self.read_cells(property_names, cells_to_read)
+        return data
 
     def read_exact(self, property_names, vector=None, radius=None, redshift_range=None):
 
@@ -310,6 +343,8 @@ class IndexedLightconeParticleType:
             vector = np.asarray(vector, dtype=float)
 
         cells_to_read = self.get_cell_indexes_from_vector_radius_redshift(vector, radius, redshift_range)
+        if self.comm is not None:
+            cells_to_read = self.split_cells_by_mpi_rank(cells_to_read)
 
         # Filtering on angle is only implemented for radii < 90 degrees
         if radius is not None and radius > 0.5*np.pi:
@@ -382,42 +417,58 @@ class IndexedLightcone(collections.abc.Mapping):
     """
     Class used to read particle lightcones
     """
-    def __init__(self, fname):
+    def __init__(self, fname, comm=None):
 
-        # Store base name so we can find the other files
-        m = re.match(r"(.*)\.[0-9]+\.hdf5", fname)
-        if m is not None:
-            basename = m.group(1)
+        if comm is not None:
+            comm_rank = comm.Get_rank()
+            comm_size = comm.Get_size()
         else:
-            raise IOError("Unable to extract base name from filename: %s" % fname)
+            comm_rank = 0
+            comm_size = 1
 
-        with h5py.File(fname, "r") as infile:
+        # In MPI mode rank 0 reads the metadata and then we broadcast it
+        if comm_rank == 0:
 
-            # Read metadata from the specified file
-            metadata = {}
-            for name in infile["Lightcone"].attrs:
-                metadata[name] = infile["Lightcone"].attrs[name]
+            # Store base name so we can find the other files
+            m = re.match(r"(.*)\.[0-9]+\.hdf5", fname)
+            if m is not None:
+                basename = m.group(1)
+            else:
+                raise IOError("Unable to extract base name from filename: %s" % fname)
 
-            # Read units information
-            units = {}
-            units["Current"]     = infile["Units"].attrs["Unit current in cgs (U_I)"][0]
-            units["Length"]      = infile["Units"].attrs["Unit length in cgs (U_L)"][0]
-            units["Mass"]        = infile["Units"].attrs["Unit mass in cgs (U_M)"][0]
-            units["Temperature"] = infile["Units"].attrs["Unit temperature in cgs (U_T)"][0]
-            units["Time"]        = infile["Units"].attrs["Unit time in cgs (U_t)"][0]
+            with h5py.File(fname, "r") as infile:
 
-            # Find names of all of the lightcone files
-            filenames = []
-            for i in range(metadata["nr_mpi_ranks"]):
-                filenames.append("%s.%d.hdf5" % (basename, i))
+                # Read metadata from the specified file
+                metadata = {}
+                for name in infile["Lightcone"].attrs:
+                    metadata[name] = infile["Lightcone"].attrs[name]
 
-            # Determine particle types present
-            self.particle_types = {}
-            for type_name in infile["Cells"]:
-                index = {}
-                for name in infile["Cells"][type_name]:
-                    index[name] = infile["Cells"][type_name][name][()]
-                self.particle_types[type_name] = IndexedLightconeParticleType(type_name, metadata, index, units, filenames)
+                # Read units information
+                units = {}
+                units["Current"]     = infile["Units"].attrs["Unit current in cgs (U_I)"][0]
+                units["Length"]      = infile["Units"].attrs["Unit length in cgs (U_L)"][0]
+                units["Mass"]        = infile["Units"].attrs["Unit mass in cgs (U_M)"][0]
+                units["Temperature"] = infile["Units"].attrs["Unit temperature in cgs (U_T)"][0]
+                units["Time"]        = infile["Units"].attrs["Unit time in cgs (U_t)"][0]
+
+                # Find names of all of the lightcone files
+                filenames = []
+                for i in range(metadata["nr_mpi_ranks"]):
+                    filenames.append("%s.%d.hdf5" % (basename, i))
+
+                # Determine particle types present
+                self.particle_types = {}
+                for type_name in infile["Cells"]:
+                    index = {}
+                    for name in infile["Cells"][type_name]:
+                        index[name] = infile["Cells"][type_name][name][()]
+                    self.particle_types[type_name] = IndexedLightconeParticleType(type_name, metadata, index, units, filenames, comm=comm)
+
+        else:
+            self.particle_types = None
+
+        if comm is not None:
+            self.particle_types = comm.bcast(self.particle_types)
 
     def __getitem__(self, key):
         return self.particle_types[key]
