@@ -51,20 +51,16 @@ class IndexedLightconeParticleType:
     """
     Class to read a single particle type from a lightcone
     """
-    def __init__(self, type_name, metadata, index, units, filenames, comm=None):
+    def __init__(self, type_name, metadata, index, units, filenames):
 
         self.type_name = type_name
         self.metadata  = metadata
         self.index     = index
         self.units     = units
         self.filenames = filenames
-        self.comm      = comm
-        if comm is not None:
-            self.comm_rank = comm.Get_rank()
-            self.comm_size = comm.Get_size()
-        else:
-            self.comm_rank = 0
-            self.comm_size = 1
+        self.comm      = None
+        self.comm_rank = 0
+        self.comm_size = 1
 
         # Find range of particles in each file
         first_particle_in_file = index["first_particle_in_file"]
@@ -97,6 +93,11 @@ class IndexedLightconeParticleType:
                             properties[prop_name].attrs = dict(dataset.attrs)
                     break
         self.properties = properties
+
+    def set_mpi_mode(self, comm):
+        self.comm = comm
+        self.comm_rank = comm.Get_rank()
+        self.comm_size = comm.Get_size()
 
     def get_redshift_bins_in_range(self, redshift_min, redshift_max):
         """
@@ -283,6 +284,8 @@ class IndexedLightconeParticleType:
                        max_particles=1048576):
 
         cells_to_read = self.get_cell_indexes_from_vector_radius_redshift(vector, radius, redshift_range)
+        if self.comm is not None:
+            cells_to_read = self.split_cells_by_mpi_rank(cells_to_read)
         nr_cells = len(cells_to_read)
 
         # Find the sizes of the selected cells
@@ -341,10 +344,6 @@ class IndexedLightconeParticleType:
 
         if vector is not None:
             vector = np.asarray(vector, dtype=float)
-
-        cells_to_read = self.get_cell_indexes_from_vector_radius_redshift(vector, radius, redshift_range)
-        if self.comm is not None:
-            cells_to_read = self.split_cells_by_mpi_rank(cells_to_read)
 
         # Filtering on angle is only implemented for radii < 90 degrees
         if radius is not None and radius > 0.5*np.pi:
@@ -462,13 +461,15 @@ class IndexedLightcone(collections.abc.Mapping):
                     index = {}
                     for name in infile["Cells"][type_name]:
                         index[name] = infile["Cells"][type_name][name][()]
-                    self.particle_types[type_name] = IndexedLightconeParticleType(type_name, metadata, index, units, filenames, comm=comm)
+                    self.particle_types[type_name] = IndexedLightconeParticleType(type_name, metadata, index, units, filenames)
 
         else:
             self.particle_types = None
 
         if comm is not None:
             self.particle_types = comm.bcast(self.particle_types)
+            for pt in self.particle_types.values():
+                pt.set_mpi_mode(comm)
 
     def __getitem__(self, key):
         return self.particle_types[key]
