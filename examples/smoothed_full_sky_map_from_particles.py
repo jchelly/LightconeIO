@@ -118,9 +118,36 @@ def exchange_particles(part_dest, arrays):
                                recvbuf.ravel(), ndims*recv_count, ndims*recv_offset,
                                comm=comm)
         else:
-            raise RuntimeError("Can only exchange arrays witj 1 or 2 dimensions")
+            raise RuntimeError("Can only exchange arrays with 1 or 2 dimensions")
 
     return recv_arrays
+
+
+def create_empty_array(arr, comm):
+    """
+    Ensure that if arr is None on some ranks it is replaced with a zero
+    sized array of the same dtype and units as the other ranks.
+    """
+    has_units = comm.allreduce(hasattr(arr, "units"), op=MPI.MAX)
+    local_dtype = None if arr is None else arr.dtype
+    if has_units:
+        local_units = None if arr is None else arr.units
+    else:
+        local_units = None
+    local_shape = None if arr is None else arr.shape[1:]
+    dtypes = comm.allgather(local_dtype)
+    units  = comm.allgather(local_units)
+    shapes = comm.allgather(local_shape)
+    if arr is None:
+        for dt, u, s in zip(dtypes, units, shapes):
+            if dt is not None:
+                arr = np.ndarray((0,)+s, dtype=dt)
+                if has_units:
+                    arr = unyt.unyt_array(arr, units=u, dtype=dt)
+                return arr
+        raise ValueError("All input arrays are None in create_empty_array()!")
+    else:
+        return arr
 
 
 def message(m):
@@ -230,27 +257,46 @@ def make_full_sky_map(input_filename, output_filename, zmin, zmax):
     #
     non_local = []
     nr_part = len(part_pix_recv)
+    nr_local_updates = comm.allreduce(nr_part)
     for part_nr in range(nr_part):
         pix_index, pix_val = explode_particle(nside, part_pos_recv[part_nr,:], part_val_recv[part_nr], part_hsml_recv[part_nr])
         local_pix_index = pix_index - comm_rank * npix_local
         local = (local_pix_index >= 0) & (local_pix_index < npix_local)
         np.add.at(map_data, local_pix_index[local], pix_val[local].value)
-        non_local.append((pix_index[local==False], pix_val[local==False]))
-    message("Applied local multi-pixel updates")
+        # Store non-local updates to apply later
+        if np.sum(local==False) > 0:
+            non_local.append((pix_index[local==False], pix_val[local==False]))
+    message(f"Applied local multi-pixel updates for {nr_local_updates} particles")
 
     #
-    # Exchange non-local updates
+    # Exchange non-local updates, if there are any. These are cases where a
+    # particle on this rank needs to update pixels stored on another rank.
     #
-    pix_index_send = np.concatenate([nl[0] for nl in non_local])
-    pix_val_send = np.concatenate([nl[1] for nl in non_local])
-    pix_dest = pix_index_send // npix_local
-    pix_index_recv, pix_val_recv = exchange_particles(pix_dest, (pix_index_send, pix_val_send))
-
-    # Apply non-local updates from particles which cover multiple pixels
-    local_pix_index = pix_index_recv - comm_rank * npix_local
-    assert np.all(local_pix_index>=0) and np.all(local_pix_index < npix_local)
-    np.add.at(map_data, local_pix_index, pix_val_recv.value)
-    message("Applied non-local multi-pixel updates")
+    nr_non_local_tot = comm.allreduce(len(non_local))
+    if nr_non_local_tot > 0:
+        # Make arrays of updates to do
+        if len(non_local) > 0:
+            pix_index_send = np.concatenate([nl[0] for nl in non_local])
+            pix_val_send = np.concatenate([nl[1] for nl in non_local])
+        else:
+            pix_index_send = None
+            pix_val_send = None
+        # On ranks with no updates, create zero sized arrays of the appropriate type
+        pix_index_send = create_empty_array(pix_index_send, comm)
+        pix_val_send   = create_empty_array(pix_val_send, comm)
+        nr_nonlocal_updates = len(pix_val_send)
+        # Send updates to the rank with the pixel they should be applied to
+        pix_dest = pix_index_send // npix_local
+        pix_index_recv, pix_val_recv = exchange_particles(pix_dest, (pix_index_send, pix_val_send))
+        # Apply the imported updates to the local part of the map
+        local_pix_index = pix_index_recv - comm_rank * npix_local
+        assert np.all(local_pix_index>=0) and np.all(local_pix_index < npix_local)
+        np.add.at(map_data, local_pix_index, pix_val_recv.value)
+    else:
+        # No ranks have any non-local updates to do
+        nr_nonlocal_updates = 0
+    nr_nonlocal_updates = comm.allreduce(nr_nonlocal_updates)
+    message(f"Applied {nr_nonlocal_updates} non-local multi-pixel updates")
 
     # Write out the new map
     with h5py.File(output_filename, "w", driver="mpio", comm=comm) as outfile:
