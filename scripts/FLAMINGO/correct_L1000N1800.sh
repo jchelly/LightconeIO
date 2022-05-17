@@ -6,7 +6,7 @@
 #SBATCH -o ./logs/L1000N1800/correct_%x.lightcone%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
-#SBATCH -t 2:00:00
+#SBATCH -t 72:00:00
 #
 
 module purge
