@@ -156,8 +156,9 @@ def message(m):
         print(m)
 
 
-def make_full_sky_map(input_filename, output_filename, ptype, property_names,
-                      particle_value_function, zmin, zmax, nside, smooth=True):
+def make_full_sky_map(input_filename, output_filename, dataset_name,
+                      ptype, property_names, particle_value_function,
+                      zmin, zmax, nside, smooth=True):
     
     # Ensure property_names list contains coordinates and smoothing lengths
     property_names = list(property_names)
@@ -255,14 +256,18 @@ def make_full_sky_map(input_filename, output_filename, ptype, property_names,
     non_local = []
     nr_part = len(part_pix_recv)
     nr_local_updates = comm.allreduce(nr_part)
+    nr_stored = 0
     for part_nr in range(nr_part):
+        if part_nr % 1000 == 0 and comm_rank == 0:
+            print(part_nr, nr_part, len(non_local), nr_stored)
         pix_index, pix_val = explode_particle(nside, part_pos_recv[part_nr,:], part_val_recv[part_nr], part_hsml_recv[part_nr])
         local_pix_index = pix_index - comm_rank * npix_local
         local = (local_pix_index >= 0) & (local_pix_index < npix_local)
         np.add.at(map_data, local_pix_index[local], pix_val[local].value)
         # Store non-local updates to apply later
         if np.sum(local==False) > 0:
-            non_local.append((pix_index[local==False], pix_val[local==False]))
+            nr_stored += np.sum(local==False)
+        #    non_local.append((pix_index[local==False], pix_val[local==False]))
     message(f"Applied local multi-pixel updates for {nr_local_updates} particles")
 
     #
@@ -297,42 +302,57 @@ def make_full_sky_map(input_filename, output_filename, ptype, property_names,
 
     # Write out the new map
     with h5py.File(output_filename, "w", driver="mpio", comm=comm) as outfile:
-        phdf5.collective_write(outfile, "MassMap", map_data, comm)
+        phdf5.collective_write(outfile, dataset_name, map_data, comm)
 
     map_sum = comm.allreduce(np.sum(map_data))
     message(f"Wrote map, sum = {map_sum}.")
 
     # Sanity check:
     # Sum over the map should equal sum of values to be accumulated to the map.
-    ratio = map_sum / val_total_glocal
+    ratio = map_sum / val_total_global.value
     message(f"Ratio (map sum / total values to add to map) = {ratio} (should be 1.0)")
 
 
-if __name__ == "__main__":
+def test_bh_map():
 
-    # Map resolution
-    nside = 64
-
-    # Specify one file from the spatially indexed lightcone particle data
-    input_filename = "/cosma8/data/dp004/jch/FLAMINGO/BlackHoles/200_w_lightcone/sorted_lightcones/lightcone0_particles/lightcone0_0000.0.hdf5"
-
-    # Where to write the new HEALPix map
+    nside = 16384
+    input_filename = "/cosma8/data/dp004/jch/FLAMINGO/BlackHoles/200_w_lightcone/sorted_lightcones_new/lightcone0_particles/lightcone0_0000.0.hdf5"
     output_filename = "/cosma8/data/dp004/jch/lightcone_map.hdf5"
+    zmin, zmax = (0.05, 0.1)
+    ptype = "BH"
+    property_names = ("DynamicalMasses",)
 
-    # Redshift range to do
-    zmin, zmax = (0.0, 0.05)
+    # Function to return the quantity to map, given the lightcone particle data dict
+    def particle_mass(particle_data):
+        return particle_data["DynamicalMasses"]
 
-    # Which particle type to do
+    dataset_name = "BlackHoleMass"
+
+    # Make the map
+    make_full_sky_map(input_filename, output_filename, dataset_name,
+                      ptype, property_names, particle_mass, zmin, zmax,
+                      nside, smooth=False)
+
+def test_gas_map():
+
+    nside = 16384
+    input_filename = "/cosma8/data/dp004/jch/FLAMINGO/BlackHoles/200_w_lightcone/sorted_lightcones_new/lightcone0_particles/lightcone0_0000.0.hdf5"
+    output_filename = "/cosma8/data/dp004/jch/lightcone_map.hdf5"
+    zmin, zmax = (0.05, 0.1)
     ptype = "Gas"
-
-    # Extra quantities to read in:
-    # Coordinates are alays read, and SmoothingLengths are read if smooth=True.
     property_names = ("Masses",)
 
     # Function to return the quantity to map, given the lightcone particle data dict
     def particle_mass(particle_data):
         return particle_data["Masses"]
 
+    dataset_name = "SmoothedGasMass"
+
     # Make the map
-    make_full_sky_map(input_filename, output_filename, ptype, property_names,
-                      particle_mass, zmin, zmax, nside, smooth=True)
+    make_full_sky_map(input_filename, output_filename, dataset_name,
+                      ptype, property_names, particle_mass, zmin, zmax,
+                      nside, smooth=True)
+
+if __name__ == "__main__":
+
+    test_gas_map()
