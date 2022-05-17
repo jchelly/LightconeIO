@@ -156,15 +156,22 @@ def message(m):
         print(m)
 
 
-def make_full_sky_map(input_filename, output_filename, zmin, zmax):
+def make_full_sky_map(input_filename, output_filename, ptype, property_names,
+                      particle_value_function, zmin, zmax, nside, smooth=True):
     
+    # Ensure property_names list contains coordinates and smoothing lengths
+    property_names = list(property_names)
+    if "Coordinates" not in property_names:
+        property_names.append("Coordinates")
+    if smooth and ("SmoothingLengths" not in property_names):
+        property_names.append("SmoothingLengths")
+
     # Open the lightcone
     lightcone = pr.IndexedLightcone(input_filename, comm=comm)
-    print(lightcone["BH"].comm_rank, lightcone["BH"].comm_size)
+    print(lightcone[ptype].comm_rank, lightcone[ptype].comm_size)
 
     # Create an empty HEALPix map, distributed over MPI ranks.
     # Here we assume we can put equal sized chunks of the map on each rank.
-    nside = 64
     npix = hp.pixelfunc.nside2npix(nside)
     max_pixrad = hp.pixelfunc.max_pixrad(nside)
     if npix % comm_size != 0:
@@ -172,19 +179,11 @@ def make_full_sky_map(input_filename, output_filename, zmin, zmax):
     npix_local = npix // comm_size
     map_data = np.zeros(npix_local, dtype=float)
     message(f"Total number of pixels = {npix}")
-
-    # Specify quantities to read in
-    property_names = ("Coordinates", "DynamicalMasses", "ExpansionFactors")
     
-    # Redshift range to read in
-    redshift_range = (zmin, zmax)
-
-    # Will read the full sky
+    # Will read the full sky within the redshift range
     vector = None
     radius = None
-
-    # Particle type
-    ptype = "BH"
+    redshift_range = (zmin, zmax)
 
     # Determine number of particles to read on this MPI rank
     nr_particles_local = lightcone[ptype].count_particles(redshift_range=redshift_range,
@@ -197,21 +196,19 @@ def make_full_sky_map(input_filename, output_filename, zmin, zmax):
     particle_data = lightcone[ptype].read_exact(property_names, vector, radius, redshift_range)
     message("Read in particle data")
 
-    # Fake BH smoothing lengths for testing
-    nr_parts = particle_data["Coordinates"].shape[0]
-    fake_hsml = np.ones(nr_parts, dtype=float) * 0.1
-    fake_hsml = unyt.unyt_array(fake_hsml, units=particle_data["Coordinates"].units)
-    particle_data["SmoothingLengths"] = fake_hsml
-
     # Find the particle positions and smoothing lengths
     part_pos_send = particle_data["Coordinates"]
-    part_hsml_send = find_angular_smoothing_length(part_pos_send, particle_data["SmoothingLengths"])
+    if smooth:
+        part_hsml_send = find_angular_smoothing_length(part_pos_send, particle_data["SmoothingLengths"])
+    else:
+        part_hsml_send = np.zeros(part_pos_send.shape[0], dtype=float)
+
     # Determine what pixel each particle is in
     part_pix_send = hp.pixelfunc.vec2pix(nside, part_pos_send[:,0].value, part_pos_send[:,1].value, part_pos_send[:,2].value)
 
     # Decide which rank we need to send each particle to and its contribution to the map
     part_dest = part_pix_send // npix_local
-    part_val_send  = particle_data["DynamicalMasses"]
+    part_val_send  = particle_value_function(particle_data)
     message("Computed destination rank for each particle")
 
     # Report total to be added to the map
@@ -305,8 +302,16 @@ def make_full_sky_map(input_filename, output_filename, zmin, zmax):
     map_sum = comm.allreduce(np.sum(map_data))
     message(f"Wrote map, sum = {map_sum}.")
 
+    # Sanity check:
+    # Sum over the map should equal sum of values to be accumulated to the map.
+    ratio = map_sum / val_total_glocal
+    message(f"Ratio (map sum / total values to add to map) = {ratio} (should be 1.0)")
+
 
 if __name__ == "__main__":
+
+    # Map resolution
+    nside = 64
 
     # Specify one file from the spatially indexed lightcone particle data
     input_filename = "/cosma8/data/dp004/jch/FLAMINGO/BlackHoles/200_w_lightcone/sorted_lightcones/lightcone0_particles/lightcone0_0000.0.hdf5"
@@ -317,4 +322,17 @@ if __name__ == "__main__":
     # Redshift range to do
     zmin, zmax = (0.0, 0.05)
 
-    make_full_sky_map(input_filename, output_filename, zmin, zmax)
+    # Which particle type to do
+    ptype = "Gas"
+
+    # Extra quantities to read in:
+    # Coordinates are alays read, and SmoothingLengths are read if smooth=True.
+    property_names = ("Masses",)
+
+    # Function to return the quantity to map, given the lightcone particle data dict
+    def particle_mass(particle_data):
+        return particle_data["Masses"]
+
+    # Make the map
+    make_full_sky_map(input_filename, output_filename, ptype, property_names,
+                      particle_mass, zmin, zmax, nside, smooth=True)
