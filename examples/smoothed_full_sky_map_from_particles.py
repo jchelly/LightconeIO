@@ -64,6 +64,7 @@ def explode_particle(nside, part_pos, part_val, angular_smoothing_length):
             
     # Get pixel indexes to update
     pix_index = hp.query_disc(nside, part_pos, angular_search_radius)
+    assert len(pix_index) >= 1
 
     # For each pixel, find angle between pixel centre and the particle
     pix_vec  = np.column_stack(hp.pixelfunc.pix2vec(nside, pix_index))
@@ -156,8 +157,57 @@ def message(m):
         print(m)
 
 
-def make_full_sky_map(input_filename, output_filename, dataset_name,
-                      ptype, property_names, particle_value_function,
+def distribute_pixels(comm, nside):
+    """
+    Decide how to assign HEALPix pixels to MPI ranks.
+
+    Here we assume the ring ordering scheme so that the minimum
+    colatitude of a rank is the colatitude of its first pixel
+    and the maximum colatitude of the rank is the colatitude of
+    its last pixel, since all pixels in a ring have the same
+    colatitude.
+
+    We put equal numbers of pixels on each rank except that any
+    leftovers are assigned to the last rank.
+
+    Returns -
+    
+    nr_total_pixels: total number of pixels in the map
+    nr_local_pixels: number of pixels on each rank
+    local_offset:    offset between local and global pixel indexes
+    min_theta:       minimum co-latitude theta on each rank
+    max_theta:       minimum co-latitude theta on each rank
+    """
+
+    # Find number of pixels on each rank
+    comm_rank = comm.Get_rank()
+    comm_size = comm.Get_size()
+    nr_total_pixels = hp.pixelfunc.nside2npix(nside)
+    nr_local_pixels = nr_total_pixels // comm_size
+    local_offset = nr_local_pixels * comm_rank
+
+    # Find range of pixels on each rank
+    first_pixel = np.arange(comm_size, dtype=int) * nr_local_pixels
+    last_pixel = first_pixel + nr_local_pixels - 1
+    # Any extra pixels go on the last rank
+    last_pixel[-1] = nr_total_pixels - 1
+    nr_local_pixels = last_pixel[comm_rank] - first_pixel[comm_rank] + 1
+
+    # Find range in colatitude on each rank:
+    # Here we make an array with the value of theta at the boundary between
+    # ranks, with com_size+1 elements. The first and last elements are 0 and 2pi.
+    theta_boundary = np.ndarray(comm_size+1, dtype=float)
+    theta_boundary[0] = 0.0
+    theta_boundary[-1] = np.pi
+    for i in range(0,comm_size-1):
+        theta1, phi = hp.pixelfunc.pix2ang(nside, last_pixel[i])
+        theta2, phi = hp.pixelfunc.pix2ang(nside, first_pixel[i+1])
+        theta_boundary[i+1] = 0.5*(theta1+theta2)
+
+    return nr_total_pixels, nr_local_pixels, local_offset, theta_boundary
+
+
+def make_full_sky_map(input_filename, ptype, property_names, particle_value_function,
                       zmin, zmax, nside, smooth=True):
     
     # Ensure property_names list contains coordinates and smoothing lengths
@@ -173,13 +223,9 @@ def make_full_sky_map(input_filename, output_filename, dataset_name,
 
     # Create an empty HEALPix map, distributed over MPI ranks.
     # Here we assume we can put equal sized chunks of the map on each rank.
-    npix = hp.pixelfunc.nside2npix(nside)
+    nr_total_pixels, nr_local_pixels, local_offset, theta_boundary = distribute_pixels(comm, nside)
     max_pixrad = hp.pixelfunc.max_pixrad(nside)
-    if npix % comm_size != 0:
-        raise RuntimeError("Map size must be a multiple of number of MPI ranks!")
-    npix_local = npix // comm_size
-    map_data = np.zeros(npix_local, dtype=float)
-    message(f"Total number of pixels = {npix}")
+    message(f"Total number of pixels = {nr_total_pixels}")
     
     # Will read the full sky within the redshift range
     vector = None
@@ -204,113 +250,102 @@ def make_full_sky_map(input_filename, output_filename, dataset_name,
     else:
         part_hsml_send = np.zeros(part_pos_send.shape[0], dtype=float)
 
-    # Determine what pixel each particle is in
-    part_pix_send = hp.pixelfunc.vec2pix(nside, part_pos_send[:,0].value, part_pos_send[:,1].value, part_pos_send[:,2].value)
+    # Find the quantities to add to the map
+    part_val_send = particle_value_function(particle_data)
+    val_total_global = comm.allreduce(np.sum(part_val_send, dtype=float))
 
-    # Decide which rank we need to send each particle to and its contribution to the map
-    part_dest = part_pix_send // npix_local
-    part_val_send  = particle_value_function(particle_data)
-    message("Computed destination rank for each particle")
+    # Determine range of colatitudes each particle will update.
+    # Smoothing kernel drops to zero at kernel_gamma * smoothing length.
+    # Note that particles with radius < max_pixrad can still update
+    # pixels up to max_pixrad away because they update whatever pixel
+    # they are in.
+    radius = np.maximum(kernel.kernel_gamma*part_hsml_send, max_pixrad) # Might update pixels with centres within this radius
+    theta, phi = hp.pixelfunc.vec2ang(part_pos_send)
+    part_min_theta = np.clip(theta-radius, 0.0, np.pi) # Minimum central theta of pixels each particle might update
+    part_max_theta = np.clip(theta+radius, 0.0, np.pi) # Maximum central theta of pixels each particle might update
 
-    # Report total to be added to the map
-    val_total_local = np.sum(part_val_send, dtype=float)
-    val_total_global = comm.allreduce(val_total_local)
-    message(f"Total to add to the map = {val_total_global}")
+    # Determine what range of MPI ranks each particle needs to be sent to
+    part_first_rank = np.searchsorted(theta_boundary, part_min_theta, side="left") - 1
+    part_first_rank = np.clip(part_first_rank, 0, comm_size-1)
+    part_last_rank  = np.searchsorted(theta_boundary, part_max_theta, side="right") - 1
+    part_last_rank  = np.clip(part_last_rank, 0, comm_size-1)
+    assert np.all(theta_boundary[part_first_rank]  <= part_min_theta)
+    assert np.all(theta_boundary[part_last_rank+1] >= part_max_theta)
 
-    # Send each particle to the rank with the central pixel it will update
-    part_pix_recv, part_val_recv, part_hsml_recv, part_pos_recv = (
-        exchange_particles(part_dest, (part_pix_send, part_val_send, part_hsml_send, part_pos_send)))
-    message("Exchanged particles")
+    # Determine how many ranks each particle needs to be sent to
+    nr_copies = part_last_rank - part_first_rank + 1
+    assert np.all(nr_copies>=1) and np.all(nr_copies<=comm_size)
 
-    #
-    # Tidy up to save memory
-    #
+    # Duplicate the particles
+    nr_parts = part_pos_send.shape[0]
+    index = np.repeat(np.arange(nr_parts, dtype=int), nr_copies)
+    part_pos_send  = part_pos_send[index,...]
+    part_val_send  = part_val_send[index]
+    part_hsml_send = part_hsml_send[index]
+    del index
+
+    # Determine destination rank for each particle copy
+    nr_parts = np.sum(nr_copies)                # Total number of copied particles
+    offset = np.cumsum(nr_copies) - nr_copies   # Offset to first copy of each particle in array of copies
+    part_dest = -np.ones(nr_parts, dtype=int) # Destination rank for each copied particle
+    for pfr, nrc, off in zip(part_first_rank, nr_copies, offset):
+        part_dest[off:off+nrc] = np.arange(pfr, pfr+nrc, dtype=int)
+    assert np.all(part_dest >=0) & np.all(part_dest<comm_size)
+    message("Computed destination rank(s) for each particle")
+
+    # Tidy up
     del particle_data
-    del part_dest
-    del part_pix_send
+    del offset
+    del part_first_rank
+    del part_last_rank
+    del nr_copies
+
+    # Copy particles to their destinations
+    part_pos_recv, part_val_recv, part_hsml_recv = (
+        exchange_particles(part_dest, (part_pos_send, part_val_send, part_hsml_send)))
+
+    # Free send buffers
+    del part_pos_send
     del part_val_send
     del part_hsml_send
-    del part_pos_send
+    del part_dest
 
-    #
-    # Now we have each particle stored on the rank which has the pixel
-    # its centre is in. But some particles will update multiple pixels.
-    # First, process any particles which update single pixels.
-    # 
-    single_pixel = part_hsml_recv < max_pixrad
-    local_pix_index = part_pix_recv[single_pixel] - comm_rank * npix_local
-    assert np.all(local_pix_index >=0) and np.all(local_pix_index < npix_local)
-    np.add.at(map_data, local_pix_index, part_val_recv[single_pixel].value)
+    # Allocate the output map
+    map_data = np.zeros(nr_total_pixels, dtype=float)
+
+    # Now each MPI rank has copies of all particles which affect its local
+    # pixels. Process any particles which update single pixels.
+    single_pixel = part_hsml_recv*kernel.kernel_gamma < max_pixrad
+    local_pix_index = hp.pixelfunc.vec2pix(nside, 
+                                           part_pos_recv.value[single_pixel, 0],
+                                           part_pos_recv.value[single_pixel, 1],
+                                           part_pos_recv.value[single_pixel, 2]) - local_offset
+    local = (local_pix_index >=0) & (local_pix_index < nr_local_pixels)
+    np.add.at(map_data, local_pix_index[local], part_val_recv[single_pixel][local].value)
     message("Applied single pixel updates")
     
     # Discard single pixel particles
     part_hsml_recv = part_hsml_recv[single_pixel==False]
-    part_pix_recv  = part_pix_recv[single_pixel==False]
     part_val_recv  = part_val_recv[single_pixel==False]
     part_pos_recv  = part_pos_recv[single_pixel==False,:]
 
-    #
-    # Apply local updates from particles which cover multiple pixels.
-    # Also accumulates list of non-local updates to send to other ranks.
-    #
-    non_local = []
-    nr_part = len(part_pix_recv)
-    nr_local_updates = comm.allreduce(nr_part)
-    nr_stored = 0
-    for part_nr in range(nr_part):
-        if part_nr % 1000 == 0 and comm_rank == 0:
-            print(part_nr, nr_part, len(non_local), nr_stored)
+    # Apply updates from particles which cover multiple pixels.
+    nr_parts = len(part_val_recv)
+    for part_nr in range(nr_parts):
         pix_index, pix_val = explode_particle(nside, part_pos_recv[part_nr,:], part_val_recv[part_nr], part_hsml_recv[part_nr])
-        local_pix_index = pix_index - comm_rank * npix_local
-        local = (local_pix_index >= 0) & (local_pix_index < npix_local)
+        local_pix_index = pix_index - local_offset
+        local = (local_pix_index >=0) & (local_pix_index < nr_local_pixels)
         np.add.at(map_data, local_pix_index[local], pix_val[local].value)
-        # Store non-local updates to apply later
-        if np.sum(local==False) > 0:
-            nr_stored += np.sum(local==False)
-        #    non_local.append((pix_index[local==False], pix_val[local==False]))
-    message(f"Applied local multi-pixel updates for {nr_local_updates} particles")
+    message("Applied multi-pixel updates")
 
-    #
-    # Exchange non-local updates, if there are any. These are cases where a
-    # particle on this rank needs to update pixels stored on another rank.
-    #
-    nr_non_local_tot = comm.allreduce(len(non_local))
-    if nr_non_local_tot > 0:
-        # Make arrays of updates to do
-        if len(non_local) > 0:
-            pix_index_send = np.concatenate([nl[0] for nl in non_local])
-            pix_val_send = np.concatenate([nl[1] for nl in non_local])
-        else:
-            pix_index_send = None
-            pix_val_send = None
-        # On ranks with no updates, create zero sized arrays of the appropriate type
-        pix_index_send = create_empty_array(pix_index_send, comm)
-        pix_val_send   = create_empty_array(pix_val_send, comm)
-        nr_nonlocal_updates = len(pix_val_send)
-        # Send updates to the rank with the pixel they should be applied to
-        pix_dest = pix_index_send // npix_local
-        pix_index_recv, pix_val_recv = exchange_particles(pix_dest, (pix_index_send, pix_val_send))
-        # Apply the imported updates to the local part of the map
-        local_pix_index = pix_index_recv - comm_rank * npix_local
-        assert np.all(local_pix_index>=0) and np.all(local_pix_index < npix_local)
-        np.add.at(map_data, local_pix_index, pix_val_recv.value)
-    else:
-        # No ranks have any non-local updates to do
-        nr_nonlocal_updates = 0
-    nr_nonlocal_updates = comm.allreduce(nr_nonlocal_updates)
-    message(f"Applied {nr_nonlocal_updates} non-local multi-pixel updates")
-
-    # Write out the new map
-    with h5py.File(output_filename, "w", driver="mpio", comm=comm) as outfile:
-        phdf5.collective_write(outfile, dataset_name, map_data, comm)
-
-    map_sum = comm.allreduce(np.sum(map_data))
-    message(f"Wrote map, sum = {map_sum}.")
 
     # Sanity check:
     # Sum over the map should equal sum of values to be accumulated to the map.
+    map_sum = comm.allreduce(np.sum(map_data))
     ratio = map_sum / val_total_global.value
     message(f"Ratio (map sum / total values to add to map) = {ratio} (should be 1.0)")
+
+    return map_data
 
 
 def test_bh_map():
@@ -329,9 +364,13 @@ def test_bh_map():
     dataset_name = "BlackHoleMass"
 
     # Make the map
-    make_full_sky_map(input_filename, output_filename, dataset_name,
-                      ptype, property_names, particle_mass, zmin, zmax,
-                      nside, smooth=False)
+    map_data = make_full_sky_map(input_filename, ptype, property_names, particle_mass,
+                                 zmin, zmax, nside, smooth=False)
+
+    # Write out the new map
+    #with h5py.File(output_filename, "w", driver="mpio", comm=comm) as outfile:
+    #    phdf5.collective_write(outfile, dataset_name, map_data, comm)
+
 
 def test_gas_map():
 
@@ -349,10 +388,14 @@ def test_gas_map():
     dataset_name = "SmoothedGasMass"
 
     # Make the map
-    make_full_sky_map(input_filename, output_filename, dataset_name,
-                      ptype, property_names, particle_mass, zmin, zmax,
-                      nside, smooth=True)
+    map_data = make_full_sky_map(input_filename, ptype, property_names, particle_mass,
+                                 zmin, zmax, nside, smooth=True)
+
+    # Write out the new map
+    with h5py.File(output_filename, "w", driver="mpio", comm=comm) as outfile:
+        phdf5.collective_write(outfile, dataset_name, map_data, comm)
+
 
 if __name__ == "__main__":
 
-    test_gas_map()
+    test_bh_map()
