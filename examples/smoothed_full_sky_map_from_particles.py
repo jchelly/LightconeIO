@@ -209,6 +209,19 @@ def distribute_pixels(comm, nside):
 
 def make_full_sky_map(input_filename, ptype, property_names, particle_value_function,
                       zmin, zmax, nside, smooth=True):
+    """
+    Make a new HEALPix map from lightcone particle data
+
+    input_filename: name of one file from the particle lightcone output
+    ptype         : which particle type to use
+    property_names: list of particle properties to read in
+    particle_value_function: function which returns the quantity to map,
+                    given a dict containing the arrays specified by property_names
+    zmin          : minimum redshift to use
+    zmax          : maximum redshift to use
+    nside         : HEALPix resolution parameter
+    smooth        : whether to smooth the map
+    """
     
     # Ensure property_names list contains coordinates and smoothing lengths
     property_names = list(property_names)
