@@ -267,6 +267,13 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
     part_val_send = particle_value_function(particle_data)
     val_total_global = comm.allreduce(np.sum(part_val_send, dtype=float))
 
+    # Find units of the quantity which we're mapping
+    map_units = part_val_send.units
+    all_map_units = comm.allgather(map_units)
+    for unit in all_map_units:
+        if unit != map_units:
+            raise RuntimeError("Quantity to map needs to have the same units on all MPI ranks!")
+
     # No longer need the particle data
     del particle_data
 
@@ -326,7 +333,7 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
     del part_dest
 
     # Allocate the output map
-    map_data = np.zeros(nr_local_pixels, dtype=float)
+    map_data = unyt.unyt_array(np.zeros(nr_local_pixels, dtype=float), units=map_units)
 
     # Now each MPI rank has copies of all particles which affect its local
     # pixels. Process any particles which update single pixels.
@@ -336,7 +343,7 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
                                            part_pos_recv.value[single_pixel, 1],
                                            part_pos_recv.value[single_pixel, 2]) - local_offset
     local = (local_pix_index >=0) & (local_pix_index < nr_local_pixels)
-    np.add.at(map_data, local_pix_index[local], part_val_recv[single_pixel][local].value)
+    np.add.at(map_data.value, local_pix_index[local], part_val_recv[single_pixel][local].value)
     message("Applied single pixel updates")
     
     # Discard single pixel particles
@@ -350,7 +357,7 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
         pix_index, pix_val = explode_particle(nside, part_pos_recv[part_nr,:], part_val_recv[part_nr], part_hsml_recv[part_nr])
         local_pix_index = pix_index - local_offset
         local = (local_pix_index >=0) & (local_pix_index < nr_local_pixels)
-        np.add.at(map_data, local_pix_index[local], pix_val[local].value)
+        np.add.at(map_data.value, local_pix_index[local], pix_val[local].value)
         if comm_rank == 0 and part_nr % 10000 == 0:
             print(f"  Rank 0: {part_nr} of {nr_parts} particles done")
     message("Applied multi-pixel updates")
@@ -359,7 +366,7 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
     # Sanity check:
     # Sum over the map should equal sum of values to be accumulated to the map.
     map_sum = comm.allreduce(np.sum(map_data))
-    ratio = map_sum / val_total_global.value
+    ratio = map_sum / val_total_global
     message(f"Ratio (map sum / total values to add to map) = {ratio} (should be 1.0)")
 
     return map_data
