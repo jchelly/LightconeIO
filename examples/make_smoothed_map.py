@@ -1,5 +1,7 @@
 #!/bin/env python
 
+import h5py
+
 import lightcone_io.smoothed_map as smoothed_map
 import virgo.mpi.parallel_hdf5 as phdf5
 
@@ -79,3 +81,4 @@ def L1000N1800_HYDRO_FIDUCIAL_smoothed_gas_mass():
 if __name__ == "__main__":
 
     L1000N1800_HYDRO_FIDUCIAL_smoothed_gas_mass()
+    #test_bh_map()
