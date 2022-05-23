@@ -56,8 +56,8 @@ def explode_particle(nside, part_pos, part_val, angular_smoothing_length):
     pix_val: array of values to add to the pixels
     """
 
-    # Normalize position vector and strip units
-    part_pos = part_pos.value / np.sqrt(np.sum(part_pos.value**2))
+    # Normalize position vector
+    part_pos = part_pos / np.sqrt(np.sum(part_pos**2))
 
     # Find radius containing the pixels to update
     angular_search_radius = angular_smoothing_length*kernel.kernel_gamma
@@ -77,7 +77,7 @@ def explode_particle(nside, part_pos, part_val, angular_smoothing_length):
 
     # Normalize weights so that sum is one
     pix_weight = pix_weight / np.sum(pix_weight)
-    pix_val = (part_val * pix_weight).to(part_val.units)
+    pix_val = part_val * pix_weight
 
     return pix_index, pix_val
 
@@ -255,6 +255,7 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
     # Read in the particle data
     particle_data = lightcone[ptype].read_exact(property_names, vector, radius, redshift_range)
     message("Read in particle data")
+    print(f"Rank {comm_rank} has {particle_data['Coordinates'].shape[0]} particles")
 
     # Find the particle positions and smoothing lengths
     part_pos_send = particle_data["Coordinates"]
@@ -334,6 +335,7 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
 
     # Allocate the output map
     map_data = unyt.unyt_array(np.zeros(nr_local_pixels, dtype=float), units=map_units)
+    map_view = map_data.ndarray_view()
 
     # Now each MPI rank has copies of all particles which affect its local
     # pixels. Process any particles which update single pixels.
@@ -343,7 +345,7 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
                                            part_pos_recv.value[single_pixel, 1],
                                            part_pos_recv.value[single_pixel, 2]) - local_offset
     local = (local_pix_index >=0) & (local_pix_index < nr_local_pixels)
-    np.add.at(map_data.value, local_pix_index[local], part_val_recv[single_pixel][local].value)
+    np.add.at(map_view, local_pix_index[local], part_val_recv[single_pixel][local].value)
     message("Applied single pixel updates")
     
     # Discard single pixel particles
@@ -353,11 +355,13 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
 
     # Apply updates from particles which cover multiple pixels.
     nr_parts = len(part_val_recv)
+    part_pos_view  = part_pos_recv.ndarray_view()
+    part_val_view  = part_val_recv.ndarray_view()
     for part_nr in range(nr_parts):
-        pix_index, pix_val = explode_particle(nside, part_pos_recv[part_nr,:], part_val_recv[part_nr], part_hsml_recv[part_nr])
+        pix_index, pix_val = explode_particle(nside, part_pos_view[part_nr,:], part_val_view[part_nr], part_hsml_recv[part_nr])
         local_pix_index = pix_index - local_offset
         local = (local_pix_index >=0) & (local_pix_index < nr_local_pixels)
-        np.add.at(map_data.value, local_pix_index[local], pix_val[local].value)
+        np.add.at(map_view, local_pix_index[local], pix_val[local])
         if comm_rank == 0 and part_nr % 10000 == 0:
             print(f"  Rank 0: {part_nr} of {nr_parts} particles done")
     message("Applied multi-pixel updates")
