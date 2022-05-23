@@ -1,9 +1,12 @@
 #!/bin/env python
 
 import h5py
-
 import lightcone_io.smoothed_map as smoothed_map
 import virgo.mpi.parallel_hdf5 as phdf5
+
+from mpi4py import MPI
+comm = MPI.COMM_WORLD
+
 
 def test_bh_map():
 
