@@ -69,6 +69,7 @@ def explode_particle(nside, part_pos, part_val, angular_smoothing_length):
     # For each pixel, find angle between pixel centre and the particle
     pix_vec_x, pix_vec_y, pix_vec_z = hp.pixelfunc.pix2vec(nside, pix_index)
     dp = part_pos[0]*pix_vec_x + part_pos[1]*pix_vec_y + part_pos[2]*pix_vec_z
+    dp = np.clip(dp, a_min=None, a_max=1.0)
     pix_angle = np.arccos(dp)
 
     # Evaluate the projected kernel for each pixel
