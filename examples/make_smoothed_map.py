@@ -73,7 +73,7 @@ def L1000N1800_HYDRO_FIDUCIAL_smoothed_gas_mass():
 
     # Make the map
     map_data = smoothed_map.make_full_sky_map(input_filename, ptype, property_names, particle_mass,
-                                              zmin, zmax, nside, smooth=True)
+                                              zmin, zmax, nside, smooth=True, progress=True)
 
     # Write out the new map
     with h5py.File(output_filename, "w", driver="mpio", comm=comm) as outfile:

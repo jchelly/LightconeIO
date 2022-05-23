@@ -67,17 +67,15 @@ def explode_particle(nside, part_pos, part_val, angular_smoothing_length):
     assert len(pix_index) >= 1
 
     # For each pixel, find angle between pixel centre and the particle
-    pix_vec  = np.column_stack(hp.pixelfunc.pix2vec(nside, pix_index))
-    dp = np.sum(part_pos[None,:]*pix_vec, axis=1)
-    dp[dp > 1.0] = 1.0 # In case of rounding error
+    pix_vec_x, pix_vec_y, pix_vec_z = hp.pixelfunc.pix2vec(nside, pix_index)
+    dp = part_pos[0]*pix_vec_x + part_pos[1]*pix_vec_y + part_pos[2]*pix_vec_z
     pix_angle = np.arccos(dp)
 
     # Evaluate the projected kernel for each pixel
     pix_weight = projected_kernel(pix_angle/angular_smoothing_length)
 
     # Normalize weights so that sum is one
-    pix_weight = pix_weight / np.sum(pix_weight)
-    pix_val = part_val * pix_weight
+    pix_val = part_val * pix_weight / np.sum(pix_weight)
 
     return pix_index, pix_val
 
@@ -208,7 +206,7 @@ def distribute_pixels(comm, nside):
 
 
 def make_full_sky_map(input_filename, ptype, property_names, particle_value_function,
-                      zmin, zmax, nside, smooth=True):
+                      zmin, zmax, nside, smooth=True, progress=False):
     """
     Make a new HEALPix map from lightcone particle data
 
@@ -223,6 +221,12 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
     smooth        : whether to smooth the map
     """
     
+    if progress and comm_rank == 0:
+        from tqdm import tqdm
+        progress_bar = tqdm
+    else:
+        progress_bar = lambda x: x
+
     # Ensure property_names list contains coordinates and smoothing lengths
     property_names = list(property_names)
     if "Coordinates" not in property_names:
@@ -232,7 +236,6 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
 
     # Open the lightcone
     lightcone = pr.IndexedLightcone(input_filename, comm=comm)
-    print(lightcone[ptype].comm_rank, lightcone[ptype].comm_size)
 
     # Create an empty HEALPix map, distributed over MPI ranks.
     # Here we assume we can put equal sized chunks of the map on each rank.
@@ -250,12 +253,10 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
                                                           vector=vector, radius=radius,)
     nr_particles_total = comm.allreduce(nr_particles_local)
     message(f"Total number of particles = {nr_particles_total}")
-    print(f"Rank {comm_rank} has {nr_particles_local} particles to read")
 
     # Read in the particle data
     particle_data = lightcone[ptype].read_exact(property_names, vector, radius, redshift_range)
     message("Read in particle data")
-    print(f"Rank {comm_rank} has {particle_data['Coordinates'].shape[0]} particles")
 
     # Find the particle positions and smoothing lengths
     part_pos_send = particle_data["Coordinates"]
@@ -357,13 +358,12 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
     nr_parts = len(part_val_recv)
     part_pos_view  = part_pos_recv.ndarray_view()
     part_val_view  = part_val_recv.ndarray_view()
-    for part_nr in range(nr_parts):
+    for part_nr in progress_bar(range(nr_parts)):
         pix_index, pix_val = explode_particle(nside, part_pos_view[part_nr,:], part_val_view[part_nr], part_hsml_recv[part_nr])
         local_pix_index = pix_index - local_offset
         local = (local_pix_index >=0) & (local_pix_index < nr_local_pixels)
-        np.add.at(map_view, local_pix_index[local], pix_val[local])
-        if comm_rank == 0 and part_nr % 10000 == 0:
-            print(f"  Rank 0: {part_nr} of {nr_parts} particles done")
+        # Don't need to use np.add.at here because pixel indexes are unique
+        map_view[local_pix_index[local]] += pix_val[local]
     message("Applied multi-pixel updates")
 
 
