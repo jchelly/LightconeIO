@@ -30,7 +30,7 @@ def find_angular_smoothing_length(pos, hsml):
     Return smoothing length in radians of the supplied particles,
     using small angle approximation for consistency with SWIFT
     """
-    dist = np.sqrt(np.sum(pos**2, axis=1))
+    dist = np.sqrt(np.sum(pos**2, axis=1, dtype=float))
     small_angle = dist > 10.0*hsml
     large_angle = (small_angle==False)
     angular_smoothing_length = np.ndarray(pos.shape[0], dtype=float)
@@ -57,7 +57,7 @@ def explode_particle(nside, part_pos, part_val, angular_smoothing_length):
     """
 
     # Normalize position vector
-    part_pos = part_pos / np.sqrt(np.sum(part_pos**2))
+    part_pos = part_pos / np.sqrt(np.sum(part_pos**2, dtype=float))
 
     # Find radius containing the pixels to update
     angular_search_radius = angular_smoothing_length*kernel.kernel_gamma
@@ -76,7 +76,7 @@ def explode_particle(nside, part_pos, part_val, angular_smoothing_length):
     pix_weight = projected_kernel(pix_angle/angular_smoothing_length)
 
     # Normalize weights so that sum is one
-    pix_val = part_val * pix_weight / np.sum(pix_weight)
+    pix_val = part_val * pix_weight / np.sum(pix_weight, dtype=float)
 
     return pix_index, pix_val
 
@@ -267,7 +267,7 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
         part_hsml_send = np.zeros(part_pos_send.shape[0], dtype=float)
 
     # Find the quantities to add to the map
-    part_val_send = particle_value_function(particle_data)
+    part_val_send = np.asarray(particle_value_function(particle_data), dtype=float)
     val_total_global = comm.allreduce(np.sum(part_val_send, dtype=float))
 
     # Find units of the quantity which we're mapping
