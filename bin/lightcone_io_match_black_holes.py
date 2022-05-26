@@ -125,15 +125,18 @@ if __name__ == "__main__":
     snap_nr = 50
 
     # Read in the black holes from the VR output
+    print("Reading black holes from VR")
     ID_bh, pos_bh, pos_cminpot, mass, boxsize = read_vr_bh_info(basedir, snap_nr)
 
     # Read in the black holes from the lightcone in this redshift range
+    print("Reading black holes from lightcone")
     lightcone = pr.IndexedLightcone(lightcone_dir+"/"+lightcone_base+"_particles/"+lightcone_base+"_0000.0.hdf5")
     lc_data = lightcone["BH"].read_exact(("Coordinates", "ParticleIDs", "ExpansionFactor"),
                                          redshift_range=(z_min[snap_nr], z_max[snap_nr]))
 
     # For each black hole in the lightcone, find index of matching IDs in the VR output.
     # Each VR halo could get matched many times.
+    print("Matching particle IDs")
     ptr = match.match(lc_data["ParticleIDs"], ID_bh)
 
     # Each matched BH becomes a halo in the output halo catalogue.
@@ -166,6 +169,7 @@ if __name__ == "__main__":
         pass
         
     # Write the catalogue for this snapshot
+    print("Writing output")
     with h5py.File(outname, "w") as outfile:
         outfile["Xcminpot"]  = halo_pos_cminpot[:,0]
         outfile["Ycminpot"]  = halo_pos_cminpot[:,1]
