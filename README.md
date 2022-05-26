@@ -7,7 +7,7 @@ This is a python module for reading lightcone output from SWIFT simulations.
 The module can be installed to the user's home directory by running the
 following in the source directory:
 ```
-python ./setup.py install --user
+pip install --user .
 ```
 
 ## Reading lightcone HEALPix maps
