@@ -3,178 +3,221 @@
 import os
 import numpy as np
 import h5py
+import argparse
+from mpi4py import MPI
 
 import virgo.util.match as match
+import virgo.mpi.parallel_hdf5 as phdf5
+import virgo.mpi.parallel_sort as psort
 import lightcone_io.particle_reader as pr
 
-def vr_filename(basedir, suffix, snap_nr, file_nr):
-    return ("%s/VR/catalogue_%04d/vr_catalogue_%04d.%s.%d" % 
-            (basedir, snap_nr, snap_nr, suffix, file_nr))
+comm = MPI.COMM_WORLD
+comm_rank = comm.Get_rank()
+comm_size = comm.Get_size()
 
-def snap_filename(basedir, snap_nr, file_nr):
-    return ("%s/snapshots/flamingo_%04d/flamingo_%04d.%d.hdf5" %
-            (basedir, snap_nr, snap_nr, file_nr))
 
-def halfway(z1, z2):
-    """
-    Return 'half way' point between two redshifts. Will use half
-    way in log(a) for now, for no particular reason.
-    """
-    log_a1 = np.log10(1.0/(1.0+z1))
-    log_a2 = np.log10(1.0/(1.0+z2))
-    log_a = 0.5*(log_a1+log_a2)
-    return 1.0/(10.0**log_a)-1.0
+class ArgumentParserError(Exception): pass
 
-def get_redshift_bins(basedir, first_snap, last_snap):
-    """
-    Associate a redshift range with each output time.
-    For each output return minimum and maximum redshift.
-    """
-    
-    # Get the redshift of each snapshot
-    snap_redshift = {}
-    for snap_nr in range(first_snap, last_snap+1):
-        fname = snap_filename(basedir, snap_nr, 0)
-        with h5py.File(fname, "r") as infile:
-            snap_redshift[snap_nr] = float(infile["Header"].attrs["Redshift"])
 
-    # Associate a redshift range with each snapshot
-    z_min = {}
-    z_max = {}
-    for snap_nr in range(first_snap, last_snap+1):
-        if snap_nr == first_snap:
-            z_max[snap_nr] = snap_redshift[snap_nr]
-            z_min[snap_nr] = halfway(snap_redshift[snap_nr], snap_redshift[snap_nr+1])
-        elif snap_nr == last_snap:
-            z_max[snap_nr] = halfway(snap_redshift[snap_nr-1], snap_redshift[snap_nr])
-            z_min[snap_nr] = snap_redshift[snap_nr]
-        else:
-            z_max[snap_nr] = halfway(snap_redshift[snap_nr-1], snap_redshift[snap_nr])
-            z_min[snap_nr] = halfway(snap_redshift[snap_nr], snap_redshift[snap_nr+1])
-    
-    return z_min, z_max
+class ThrowingArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        sys.stderr.write(message+"\n")
+        raise ArgumentParserError(message)
 
-def read_vr_bh_info(basedir, snap_nr):
-    """
-    Read black hole particle IDs and positions from VR
-    """
-    data = {}
-    filename = vr_filename(basedir, "properties", snap_nr, 0)
-    with h5py.File(filename, "r") as infile:
-        if infile["Num_of_files"][0] != 1:
-            raise Exception("Only implemented for single file VR output!")
-        # ID of most bound BH
-        ID_bh = infile["ID_mbp_bh"][...]
-        nr_bh = len(ID_bh)
-        # Position of most bound BH
-        pos_bh = np.ndarray((nr_bh,3), dtype=infile["Xcmbp_bh"].dtype)
-        pos_bh[:,0] = infile["Xcmbp_bh"][...]
-        pos_bh[:,1] = infile["Ycmbp_bh"][...]
-        pos_bh[:,2] = infile["Zcmbp_bh"][...]
-        # Number of BHs in the group
-        n_bh = infile["n_bh"][...]
-        # Position of potential minimum
-        pos_cminpot = np.ndarray((nr_bh,3), dtype=infile["Xcmbp"].dtype)
-        pos_cminpot[:,0] = infile["Xcminpot"][...]
-        pos_cminpot[:,1] = infile["Ycminpot"][...]
-        pos_cminpot[:,2] = infile["Zcminpot"][...]
-        # Halo mass
-        mass = infile["Mass_tot"][...]
-        # Unit conversion
-        length_to_kpc = float(infile["UnitInfo"].attrs["Length_unit_to_kpc"])
-        mass_to_solarmass = float(infile["UnitInfo"].attrs["Mass_unit_to_solarmass"])
-        comoving_or_physical = int(infile["UnitInfo"].attrs["Comoving_or_Physical"])
-        h_val = float(infile["SimulationInfo"].attrs["h_val"])
-        scale_factor = float(infile["SimulationInfo"].attrs["ScaleFactor"])
-        boxsize = float(infile["SimulationInfo"].attrs["Period"])
-        if comoving_or_physical == 0:
-            # Physical units, no 1/h. Convert positions to comoving Mpc
-            pos_bh *= (length_to_kpc/1000.0/scale_factor)
-            pos_cminpot *= (length_to_kpc/1000.0/scale_factor)
-            boxsize *= (length_to_kpc/1000.0/scale_factor)
-            # Convert masses to solar masses
-            mass *= mass_to_solarmass
-        else:
-            # Comoving 1/h units. Convert positions to comoving Mpc
-            pos_bh *= (length_to_kpc/1000.0/h_val)
-            pos_cminpot *= (length_to_kpc/1000.0/h_val)
-            boxsize *= (length_to_kpc/1000.0/h_val)
-            # Convert masses to solar masses
-            mass *= (mass_to_solarmass/h_val)
 
-        # Some halos have no black hole
-        ID_bh = ID_bh.astype(np.int64)
-        ID_bh[n_bh==0] = -1
+def message(m):
+    if comm_rank == 0:
+        print(m)
+
+
+def match_black_holes(args):
+
+    import sys
+    if comm_rank > 0:
+        sys.stderr = open('/dev/null', 'w')
+
+    message(f"Starting on {comm_size} MPI ranks")
+
+    # Open the lightcone particle output in MPI mode
+    filename = f"{args.lightcone_dir}/{args.lightcone_base}_particles/{args.lightcone_base}_0000.0.hdf5"
+    lightcone = pr.IndexedLightcone(filename, comm=comm)
+
+    # Read the merger tree data we need
+    merger_tree_props = ("Subhalo/Redshift",
+                         "Subhalo/Xcmbp_bh", "Subhalo/Ycmbp_bh", "Subhalo/Zcmbp_bh",
+                         "Subhalo/Xcminpot", "Subhalo/Ycminpot", "Subhalo/Zcminpot",
+                         "Subhalo/ID_mbp_bh", "Subhalo/n_bh", "Subhalo/Structuretype", 
+                         "Subhalo/Mass_tot", "Subhalo/Mass_star",
+                         "Subhalo/Mass_gas", "Subhalo/Mass_bh")
+    treefile = phdf5.MultiFile(args.tree_basename+".%(file_nr)d.hdf5",
+                               file_nr_attr=("Header", "NumberOfFiles"),
+                               comm=comm)
+    merger_tree = treefile.read(merger_tree_props)
+    message("Read in merger trees")
+
+    # Will not try to handle the case where some ranks have zero halos
+    nr_halos = len(merger_tree["Subhalo/Redshift"])
+    assert nr_halos > 0
+
+    # Determine redshifts in the merger tree
+    redshifts = np.unique(merger_tree["Subhalo/Redshift"]) # Find unique values on this rank
+    redshifts = np.concatenate(comm.allgather(redshifts))  # Combine arrays from different ranks
+    redshifts = np.unique(redshifts)                       # Find unique values over all ranks
+    message("Identified snapshot redshifts")
+    for i, z in enumerate(redshifts):
+        message(f"  {i} : {z}")
+
+    # Sort local halos by redshift
+    order = np.argsort(merger_tree["Subhalo/Redshift"])
+    for name in merger_tree:
+        merger_tree[name] = merger_tree[name][order,...]
+    message("Sorted halos by redshift")
+
+    # Find range of local halos at each redshift
+    first_at_redshift = np.searchsorted(merger_tree["Subhalo/Redshift"], redshifts, side="left")
+    first_at_next_redshift = np.searchsorted(merger_tree["Subhalo/Redshift"], redshifts, side="right")
+    nr_at_redshift = first_at_next_redshift - first_at_redshift
+    for redshift_nr in range(len(redshifts)):
+        z = merger_tree["Subhalo/Redshift"][first_at_redshift[redshift_nr]:first_at_next_redshift[redshift_nr]]
+        if not(np.all(z==redshifts[redshift_nr])):
+            raise RuntimeError("Redshift ranges not identified correctly!")
+    message("Identified range of halos at each redshift")
+
+    # Special ID used to indicate no black hole. Will check that this doesn't appear as a real ID.
+    NULL_BH_ID = 0
+    no_bh = merger_tree["Subhalo/n_bh"]==0
+    assert np.all(merger_tree["Subhalo/ID_mbp_bh"][no_bh] == NULL_BH_ID)
+
+    # Loop over unique redshifts in the trees, excluding the last
+    for redshift_nr in range(len(redshifts)-1):
         
-    return ID_bh, pos_bh, pos_cminpot, mass, boxsize
+        # Find redshift range and range of halos for this iteration
+        z1 = redshifts[redshift_nr]
+        z2 = redshifts[redshift_nr+1]
+        i1 = first_at_redshift[redshift_nr]
+        i2 = first_at_next_redshift[redshift_nr]
+        nr_halos_in_slice = i2-i1
+        nr_halos_in_slice_all = comm.allreduce(nr_halos_in_slice)
+        message(f"Processing {nr_halos_in_slice_all} halos in redshift range {z1:.2f} to {z2:.2f}")
+
+        # Find halo most bound BH IDs
+        id_mbp_bh = merger_tree["Subhalo/ID_mbp_bh"][i1:i2]
+        have_bh   = merger_tree["Subhalo/n_bh"][i1:i2] > 0
+        mass      = merger_tree["Subhalo/Mass_tot"][i1:i2] * 1.0e10
+
+        # Find fraction of halos with BHs as a function of mass
+        log10_mmin = 8.0
+        log10_mmax = 16.0
+        nbins = 40
+        bins = np.logspace(log10_mmin, log10_mmax, nbins+1)
+        nr_halos, bin_edges = np.histogram(mass, bins=bins)
+        nr_with_bh, bin_edges = np.histogram(mass[have_bh], bins=bins)
+        nr_halos = comm.allreduce(nr_halos)
+        nr_with_bh = comm.allreduce(nr_with_bh)
+        frac_with_bh = nr_with_bh/nr_halos
+        bin_centres = np.sqrt(bin_edges[1:]*bin_edges[:-1])
+
+        # Read in the lightcone BH particle positions and IDs in this redshift range
+        lightcone_props = ("Coordinates", "ParticleIDs", "ExpansionFactors")
+        particle_data = lightcone["BH"].read_exact(lightcone_props, redshift_range=(z1,z2))
+        if np.any(particle_data["ParticleIDs"] == NULL_BH_ID):
+            raise RuntimeError("Found a BH particle with ID=NULL_BH_ID!")
+        nr_parts = len(particle_data["ParticleIDs"])
+        nr_parts_all = comm.allreduce(nr_parts)
+        message(f"  Read in {nr_parts_all} lightcone BH particles for this redshift range")
+
+        # Try to match BH particles to the halo most bound BH IDs.
+        # There may be multiple particles matching each halo due to the periodicity of the box.
+        # Since halos with no black hole have ID_mbp_bh=NULL_BH_ID and this value never appears
+        # in the particle data, every match will become a halo in the output catalogue.
+        halo_index = psort.parallel_match(particle_data["ParticleIDs"], id_mbp_bh, comm=comm)
+        matched = halo_index>=0
+        nr_matched = np.sum(matched)
+        nr_matched_all = comm.allreduce(nr_matched)
+        halo_index = halo_index[matched]
+        pc_matched = 100.0*(nr_matched_all/nr_parts_all)
+        message(f"  Matched {nr_matched_all} BH particles in this slice ({pc_matched:.2f}%)")
+
+        # Create the output halo catalogue for this redshift slice:
+        # For each matched BH particle in the lightcone, we fetch the properties of the halo
+        # it was matched with.
+        halo_slice = {}
+        for name in merger_tree:
+            halo_slice[name] = psort.fetch_elements(merger_tree[name][i1:i2,...], halo_index, comm=comm)
+        message(f"  Found halo properties for this slice")
+
+        # Compute the position of each halo in the output:
+        #
+        # We know:
+        #  - the position in the lightcone of the most bound black hole particle
+        #  - the position in the snapshot of the most bound black hole particle
+        #  - the position in the snapshot of the halo's potential minimum
+        #
+        # We want to compute the position in the lightcone of the potential minimum.
+        #
+        bh_pos_in_lightcone = particle_data["Coordinates"][matched,...].ndarray_view()
+        bh_pos_in_snapshot  = np.column_stack((halo_slice["Subhalo/Xcmbp_bh"],
+                                               halo_slice["Subhalo/Ycmbp_bh"],
+                                               halo_slice["Subhalo/Zcmbp_bh"]))
+        halo_pos_in_snapshot = np.column_stack((halo_slice["Subhalo/Xcminpot"],
+                                                halo_slice["Subhalo/Ycminpot"],
+                                                halo_slice["Subhalo/Zcminpot"]))
+        halo_pos_in_lightcone = bh_pos_in_lightcone + (halo_pos_in_snapshot - bh_pos_in_snapshot)
+
+        # Overwrite the halo position in the output catalogue
+        halo_slice["Subhalo/Xcminpot"] = halo_pos_in_lightcone[:,0]
+        halo_slice["Subhalo/Ycminpot"] = halo_pos_in_lightcone[:,1]
+        halo_slice["Subhalo/Zcminpot"] = halo_pos_in_lightcone[:,2]
+        halo_slice["Subhalo/Xcmbp_bh"] = bh_pos_in_lightcone[:,0]
+        halo_slice["Subhalo/Ycmbp_bh"] = bh_pos_in_lightcone[:,1]
+        halo_slice["Subhalo/Zcmbp_bh"] = bh_pos_in_lightcone[:,2]
+        message(f"  Computed potential minimum position in lightcone")
+
+        # Write out the halo catalogue for this snapshot
+        output_filename = f"{args.output_dir}/lightcone_halos_{redshift_nr:04d}.hdf5"
+        outfile = h5py.File(output_filename, "w", driver="mpio", comm=comm)
+        outfile.create_group("Subhalo")
+        for name in halo_slice:
+            phdf5.collective_write(outfile, name, halo_slice[name], comm=comm)
+        outfile.close()
+
+        # Add the completeness information
+        if comm_rank == 0:
+            outfile = h5py.File(output_filename, "r+")
+            grp = outfile.create_group("Completeness")
+            grp["MassBinCentre"] = bin_centres
+            grp["NumberOfHalos"] = nr_halos
+            grp["NumberOfHalosWithBH"] = nr_with_bh
+            grp["FractionWithBH"] = frac_with_bh
+            outfile.close()
+        message(f"  Wrote file: {output_filename}")
+
+        # Tidy up particle arrays before we read the next slice
+        del particle_data
+
+    message("All redshift ranges done.")
 
 
 if __name__ == "__main__":
 
-    basedir="/cosma8/data/dp004/flamingo/Runs/L1000N1800/HYDRO_FIDUCIAL/"
-    lightcone_dir="/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/HYDRO_FIDUCIAL/lightcones_z_first_nest/"
-    lightcone_base="lightcone1"
-    first_snap=0
-    last_snap=77
-    outdir="/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/HYDRO_FIDUCIAL/lightcone_halos/"
+    # Get command line arguments
+    if comm.Get_rank() == 0:
+        os.environ['COLUMNS'] = '80' # Can't detect terminal width when running under MPI?
+        parser = ThrowingArgumentParser(description='Create lightcone halo catalogues.')
+        parser.add_argument('tree_basename',  help='Location of merger tree data, without trailing .N.hdf5')
+        parser.add_argument('lightcone_dir',  help='Directory with lightcone particle outputs')
+        parser.add_argument('lightcone_base', help='Base name of the lightcone to use')
+        parser.add_argument('output_dir',     help='Where to write the output')
+        try:
+            args = parser.parse_args()
+        except ArgumentParserError as e:
+            args = None
+    else:
+        args = None
+    args = comm.bcast(args)
+    if args is None:
+        MPI.Finalize()
+        sys.exit(0)
 
-    # Find redshift range associated with each snapshot
-    z_min, z_max = get_redshift_bins(basedir, first_snap, last_snap)
+    match_black_holes(args)
 
-    # Pick a snapshot to do
-    snap_nr = 50
-
-    # Read in the black holes from the VR output
-    print("Reading black holes from VR")
-    ID_bh, pos_bh, pos_cminpot, mass, boxsize = read_vr_bh_info(basedir, snap_nr)
-
-    # Read in the black holes from the lightcone in this redshift range
-    print("Reading black holes from lightcone")
-    lightcone = pr.IndexedLightcone(lightcone_dir+"/"+lightcone_base+"_particles/"+lightcone_base+"_0000.0.hdf5")
-    lc_data = lightcone["BH"].read_exact(("Coordinates", "ParticleIDs", "ExpansionFactor"),
-                                         redshift_range=(z_min[snap_nr], z_max[snap_nr]))
-
-    # For each black hole in the lightcone, find index of matching IDs in the VR output.
-    # Each VR halo could get matched many times.
-    print("Matching particle IDs")
-    ptr = match.match(lc_data["ParticleIDs"], ID_bh)
-
-    # Each matched BH becomes a halo in the output halo catalogue.
-    # Make an array with the array indexes of the matched lightcone BH particles
-    matched = (ptr >= 0)
-    halo_lc_bh_index = np.arange(len(ptr), dtype=int)[matched]
-
-    # Make an array with the indexes of the corresponding VR halo in the snapshot.
-    # These will not be unique due to the periodic replication.
-    halo_vr_index = ptr[matched]
-    
-    # For each VR halo, get a vector from the black hole position to centre of potential
-    delta_pos = pos_cminpot - pos_bh
-
-    # The position of the most bound BH in each halo in the lightcone is given by
-    # pos_bh[halo_lc_bh_index,:]. Need to add an offset to get the potential minimum.
-    # TODO: deal with units properly!
-    halo_pos_cminpot = lc_data["Coordinates"][halo_lc_bh_index,:].value + delta_pos[halo_vr_index,:]
-
-    # Get mass and redshift of each halo
-    halo_a = lc_data["ExpansionFactor"][halo_lc_bh_index]
-    halo_mass = mass[halo_vr_index]
-
-    # Ensure the output directory exists
-    outname = "%s/%s/lightcone_halos_%04d.hdf5" % (outdir, lightcone_base, snapnum)
-    outdir = os.path.dirname(outname)
-    try:
-        os.makedirs(outdir)
-    except OSError:
-        pass
-        
-    # Write the catalogue for this snapshot
-    print("Writing output")
-    with h5py.File(outname, "w") as outfile:
-        outfile["Xcminpot"]  = halo_pos_cminpot[:,0]
-        outfile["Ycminpot"]  = halo_pos_cminpot[:,1]
-        outfile["Zcminpot"]  = halo_pos_cminpot[:,2]
-        outfile["ID"]        = halo_vr_index
-        outfile["ID_mbp_bh"] = ID_bh
-        outfile["ExpansionFactor"] = halo_a
-        outfile["Mass"]      = halo_mass
