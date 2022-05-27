@@ -42,11 +42,14 @@ def match_black_holes(args):
     filename = f"{args.lightcone_dir}/{args.lightcone_base}_particles/{args.lightcone_base}_0000.0.hdf5"
     lightcone = pr.IndexedLightcone(filename, comm=comm)
 
-    # Read the merger tree data we need
+    # Read the merger tree data we need:
+    # These will all be passed through to the output.
+    # The Redshift and [XYZ]cminpot arrays will be updated to the point of lightcone crossing.
     merger_tree_props = ("Subhalo/Redshift",
                          "Subhalo/Xcmbp_bh", "Subhalo/Ycmbp_bh", "Subhalo/Zcmbp_bh",
                          "Subhalo/Xcminpot", "Subhalo/Ycminpot", "Subhalo/Zcminpot",
                          "Subhalo/ID_mbp_bh", "Subhalo/n_bh", "Subhalo/Structuretype", 
+                         "Subhalo/SnapNum",
                          "Subhalo/Mass_tot", "Subhalo/Mass_star",
                          "Subhalo/Mass_gas", "Subhalo/Mass_bh")
     treefile = phdf5.MultiFile(args.tree_basename+".%(file_nr)d.hdf5",
@@ -55,7 +58,7 @@ def match_black_holes(args):
     merger_tree = treefile.read(merger_tree_props)
     message("Read in merger trees")
 
-    # Will not try to handle the case where some ranks have zero halos
+    # Will not try to handle the (very unlikely) case where some ranks have zero halos
     nr_halos = len(merger_tree["Subhalo/Redshift"])
     assert nr_halos > 0
 
@@ -89,6 +92,7 @@ def match_black_holes(args):
     assert np.all(merger_tree["Subhalo/ID_mbp_bh"][no_bh] == NULL_BH_ID)
 
     # Loop over unique redshifts in the trees, excluding the last
+    halos_so_far = 0
     for redshift_nr in range(len(redshifts)-1):
         
         # Find redshift range and range of halos for this iteration
@@ -114,7 +118,7 @@ def match_black_holes(args):
         nr_with_bh, bin_edges = np.histogram(mass[have_bh], bins=bins)
         nr_halos = comm.allreduce(nr_halos)
         nr_with_bh = comm.allreduce(nr_with_bh)
-        frac_with_bh = nr_with_bh/nr_halos
+        frac_with_bh = np.divide(nr_with_bh, nr_halos, out=np.zeros_like(nr_halos, dtype=float), where=nr_halos>0)
         bin_centres = np.sqrt(bin_edges[1:]*bin_edges[:-1])
 
         # Read in the lightcone BH particle positions and IDs in this redshift range
@@ -134,6 +138,7 @@ def match_black_holes(args):
         matched = halo_index>=0
         nr_matched = np.sum(matched)
         nr_matched_all = comm.allreduce(nr_matched)
+        halos_so_far += nr_matched
         halo_index = halo_index[matched]
         pc_matched = 100.0*(nr_matched_all/nr_parts_all)
         message(f"  Matched {nr_matched_all} BH particles in this slice ({pc_matched:.2f}%)")
@@ -171,6 +176,8 @@ def match_black_holes(args):
         halo_slice["Subhalo/Xcmbp_bh"] = bh_pos_in_lightcone[:,0]
         halo_slice["Subhalo/Ycmbp_bh"] = bh_pos_in_lightcone[:,1]
         halo_slice["Subhalo/Zcmbp_bh"] = bh_pos_in_lightcone[:,2]
+        # Set the redshift of each halo to the redshift of lightcone crossing
+        halo_slice["Subhalo/Redshift"] = 1.0/particle_data["ExpansionFactors"][matched]-1.0
         message(f"  Computed potential minimum position in lightcone")
 
         # Write out the halo catalogue for this snapshot
@@ -181,7 +188,10 @@ def match_black_holes(args):
             phdf5.collective_write(outfile, name, halo_slice[name], comm=comm)
         outfile.close()
 
-        # Add the completeness information
+        # Count halos output so far, including this redshift slice
+        halos_so_far_all = comm.allreduce(halos_so_far)
+
+        # Add the completeness information etc
         if comm_rank == 0:
             outfile = h5py.File(output_filename, "r+")
             grp = outfile.create_group("Completeness")
@@ -189,6 +199,17 @@ def match_black_holes(args):
             grp["NumberOfHalos"] = nr_halos
             grp["NumberOfHalosWithBH"] = nr_with_bh
             grp["FractionWithBH"] = frac_with_bh
+            grp = outfile.create_group("Header")
+            grp.attrs["MinimumRedshift"] = z1
+            grp.attrs["MaximumRedshift"] = z2
+            grp.attrs["AllRedshiftsWithHalos"] = redshifts
+            grp.attrs["NumberOfFiles"] = len(redshifts)-1
+            grp.attrs["ThisFile"] = redshift_nr
+            grp.attrs["NumberOfHalosInFile"] = nr_matched_all
+            grp.attrs["CumulativeNumberOfHalos"] = halos_so_far_all
+            grp.attrs["LightconeDir"] = args.lightcone_dir
+            grp.attrs["LightconeBase"] = args.lightcone_base
+            grp.attrs["TreeBaseName"] = args.tree_basename
             outfile.close()
         message(f"  Wrote file: {output_filename}")
 
