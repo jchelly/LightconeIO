@@ -206,8 +206,8 @@ def distribute_pixels(comm, nside):
     return nr_total_pixels, nr_local_pixels, local_offset, theta_boundary
 
 
-def make_full_sky_map(input_filename, ptype, property_names, particle_value_function,
-                      zmin, zmax, nside, smooth=True, progress=False):
+def make_sky_map(input_filename, ptype, property_names, particle_value_function,
+                      zmin, zmax, nside, vector = None, radius = None, smooth=True, progress=False):
     """
     Make a new HEALPix map from lightcone particle data
 
@@ -245,8 +245,6 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
     message(f"Total number of pixels = {nr_total_pixels}")
     
     # Will read the full sky within the redshift range
-    vector = None
-    radius = None
     redshift_range = (zmin, zmax)
 
     # Determine number of particles to read on this MPI rank
@@ -271,7 +269,7 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
     val_total_global = comm.allreduce(np.sum(part_val_send, dtype=float))
 
     # Find units of the quantity which we're mapping
-    map_units = part_val_send.units
+    map_units = particle_value_function(particle_data).units
     all_map_units = comm.allgather(map_units)
     for unit in all_map_units:
         if unit != map_units:
@@ -347,7 +345,7 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
                                            part_pos_recv.value[single_pixel, 1],
                                            part_pos_recv.value[single_pixel, 2]) - local_offset
     local = (local_pix_index >=0) & (local_pix_index < nr_local_pixels)
-    np.add.at(map_view, local_pix_index[local], part_val_recv[single_pixel][local].value)
+    np.add.at(map_view, local_pix_index[local], part_val_recv[single_pixel][local])
     message("Applied single pixel updates")
     
     # Discard single pixel particles
@@ -357,8 +355,8 @@ def make_full_sky_map(input_filename, ptype, property_names, particle_value_func
 
     # Apply updates from particles which cover multiple pixels.
     nr_parts = len(part_val_recv)
-    part_pos_view  = part_pos_recv.ndarray_view()
-    part_val_view  = part_val_recv.ndarray_view()
+    part_pos_view  = part_pos_recv.view()
+    part_val_view  = part_val_recv.view()
     for part_nr in progress_bar(range(nr_parts)):
         pix_index, pix_val = explode_particle(nside, part_pos_view[part_nr,:], part_val_view[part_nr], part_hsml_recv[part_nr])
         local_pix_index = pix_index - local_offset
