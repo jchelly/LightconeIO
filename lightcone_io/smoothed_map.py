@@ -255,11 +255,12 @@ def make_sky_map(input_filename, ptype, property_names, particle_value_function,
     nr_particles_local = lightcone[ptype].count_particles(redshift_range=redshift_range,
                                                           vector=vector, radius=radius,)
     nr_particles_total = comm.allreduce(nr_particles_local)
-    message(f"Total number of particles = {nr_particles_total}")
+    message(f"Total number of particles in selected cells = {nr_particles_total}")
 
     # Read in the particle data
     particle_data = lightcone[ptype].read_exact(property_names, vector, radius, redshift_range)
-    message("Read in particle data")
+    nr_parts_tot = comm.allreduce(particle_data["Coordinates"].shape[0])
+    message(f"Read in {nr_parts_tot} particles")
 
     # Find the particle positions and smoothing lengths
     part_pos_send = particle_data["Coordinates"]
@@ -348,6 +349,7 @@ def make_sky_map(input_filename, ptype, property_names, particle_value_function,
     # Now each MPI rank has copies of all particles which affect its local
     # pixels. Process any particles which update single pixels.
     single_pixel = part_hsml_recv*kernel.kernel_gamma < max_pixrad
+    nr_single_pixel = comm.allreduce(np.sum(single_pixel))
     local_pix_index = hp.pixelfunc.vec2pix(nside, 
                                            part_pos_recv_view[single_pixel, 0],
                                            part_pos_recv_view[single_pixel, 1],
@@ -356,7 +358,7 @@ def make_sky_map(input_filename, ptype, property_names, particle_value_function,
     np.add.at(map_view, local_pix_index[local], part_val_recv_view[single_pixel][local])
     del part_pos_recv_view
     del part_val_recv_view
-    message("Applied single pixel updates")
+    message(f"Applied {nr_single_pixel} single pixel updates")
     
     # Discard single pixel particles
     part_hsml_recv = part_hsml_recv[single_pixel==False]
@@ -373,6 +375,7 @@ def make_sky_map(input_filename, ptype, property_names, particle_value_function,
     # be ignored too.
     #
     nr_parts = len(part_val_recv)
+    nr_parts_tot = comm.allreduce(nr_parts)
     part_pos_view  = part_pos_recv.ndarray_view()
     part_val_view  = part_val_recv.ndarray_view()
     for part_nr in progress_bar(range(nr_parts)):
@@ -381,7 +384,7 @@ def make_sky_map(input_filename, ptype, property_names, particle_value_function,
         local = (local_pix_index >=0) & (local_pix_index < nr_local_pixels)
         # Don't need to use np.add.at here because pixel indexes are unique
         map_view[local_pix_index[local]] += pix_val[local]
-    message("Applied multi-pixel updates")
+    message(f"Applied {nr_parts_tot} multi-pixel updates")
 
     # Sanity check:
     # Sum over the map should equal sum of values to be accumulated to the map.
