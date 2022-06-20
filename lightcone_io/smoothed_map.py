@@ -19,6 +19,10 @@ comm = MPI.COMM_WORLD
 comm_size = comm.Get_size()
 comm_rank = comm.Get_rank()
 
+# May want to write one stderr file per MPI rank for debugging
+#import sys
+#sys.stderr = open(f"./stderr.{comm_rank}.log", "w")
+
 projected_kernel = kernel.ProjectedKernel()
 
 def native_endian(arr):
@@ -265,11 +269,11 @@ def make_sky_map(input_filename, ptype, property_names, particle_value_function,
         part_hsml_send = np.zeros(part_pos_send.shape[0], dtype=float)
 
     # Find the quantities to add to the map
-    part_val_send = np.asarray(particle_value_function(particle_data), dtype=float)
+    part_val_send = unyt.unyt_array(particle_value_function(particle_data), dtype=float)
     val_total_global = comm.allreduce(np.sum(part_val_send, dtype=float))
 
     # Find units of the quantity which we're mapping
-    map_units = particle_value_function(particle_data).units
+    map_units = part_val_send.units
     all_map_units = comm.allgather(map_units)
     for unit in all_map_units:
         if unit != map_units:
@@ -335,17 +339,23 @@ def make_sky_map(input_filename, ptype, property_names, particle_value_function,
 
     # Allocate the output map
     map_data = unyt.unyt_array(np.zeros(nr_local_pixels, dtype=float), units=map_units)
+
+    # Will use unit-less views to carry out the map update to minimize overhead
     map_view = map_data.ndarray_view()
+    part_pos_recv_view = part_pos_recv.ndarray_view()
+    part_val_recv_view = part_val_recv.ndarray_view()
 
     # Now each MPI rank has copies of all particles which affect its local
     # pixels. Process any particles which update single pixels.
     single_pixel = part_hsml_recv*kernel.kernel_gamma < max_pixrad
     local_pix_index = hp.pixelfunc.vec2pix(nside, 
-                                           part_pos_recv.value[single_pixel, 0],
-                                           part_pos_recv.value[single_pixel, 1],
-                                           part_pos_recv.value[single_pixel, 2]) - local_offset
+                                           part_pos_recv_view[single_pixel, 0],
+                                           part_pos_recv_view[single_pixel, 1],
+                                           part_pos_recv_view[single_pixel, 2]) - local_offset
     local = (local_pix_index >=0) & (local_pix_index < nr_local_pixels)
-    np.add.at(map_view, local_pix_index[local], part_val_recv[single_pixel][local])
+    np.add.at(map_view, local_pix_index[local], part_val_recv_view[single_pixel][local])
+    del part_pos_recv_view
+    del part_val_recv_view
     message("Applied single pixel updates")
     
     # Discard single pixel particles
@@ -354,9 +364,17 @@ def make_sky_map(input_filename, ptype, property_names, particle_value_function,
     part_pos_recv  = part_pos_recv[single_pixel==False,:]
 
     # Apply updates from particles which cover multiple pixels.
+    #
+    # Here we use ndarray views of the unyt part_val array and the map to avoid
+    # any unit handling overhead. No conversion is necessary because arrays are 
+    # in the same units.
+    #
+    # We only use the direction of the position vectors, so their units can
+    # be ignored too.
+    #
     nr_parts = len(part_val_recv)
-    part_pos_view  = part_pos_recv.view()
-    part_val_view  = part_val_recv.view()
+    part_pos_view  = part_pos_recv.ndarray_view()
+    part_val_view  = part_val_recv.ndarray_view()
     for part_nr in progress_bar(range(nr_parts)):
         pix_index, pix_val = explode_particle(nside, part_pos_view[part_nr,:], part_val_view[part_nr], part_hsml_recv[part_nr])
         local_pix_index = pix_index - local_offset
@@ -365,7 +383,6 @@ def make_sky_map(input_filename, ptype, property_names, particle_value_function,
         map_view[local_pix_index[local]] += pix_val[local]
     message("Applied multi-pixel updates")
 
-
     # Sanity check:
     # Sum over the map should equal sum of values to be accumulated to the map.
     map_sum = comm.allreduce(np.sum(map_data))
@@ -373,5 +390,3 @@ def make_sky_map(input_filename, ptype, property_names, particle_value_function,
     message(f"Ratio (map sum / total values to add to map) = {ratio} (should be 1.0)")
 
     return map_data
-
-
