@@ -17,7 +17,11 @@ sim="L2800N5040/${SLURM_JOB_NAME}"
 basename=lightcone${SLURM_ARRAY_TASK_ID}
 
 input_dir=/cosma8/data/dp004/flamingo/Runs/${sim}/lightcones/
-output_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones/
+output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/combined_maps/
+
+# Output is a single large file per map, so stripe
+\mkdir -p ${output_dir}
+lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
 
 # Assume script is in $PATH
 script=`which lightcone_io_combine_maps.py`
