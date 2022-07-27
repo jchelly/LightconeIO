@@ -9,7 +9,7 @@
 #SBATCH -t 72:00:00
 #
 
-new_nside=1024
+new_nside=4096
 
 module purge
 module load gnu_comp/11.1.0 openmpi/4.1.1
@@ -20,7 +20,7 @@ lightcone_nr=${SLURM_ARRAY_TASK_ID}
 basename=lightcone${lightcone_nr}
 
 input_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones/
-output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones_downsampled/
+output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones_downsampled/_${nside}
 
 # Assume script is in $PATH
 script=`which lightcone_io_downsample_maps.py`

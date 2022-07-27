@@ -27,4 +27,4 @@ lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
 script=`which lightcone_io_combine_maps.py`
 
 mpirun python3 -m mpi4py ${script} \
-    ${input_dir} ${output_dir} ${basename}  
+    ${input_dir} ${output_dir} ${basename}

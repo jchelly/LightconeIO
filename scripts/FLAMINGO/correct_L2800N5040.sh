@@ -18,7 +18,7 @@ lightcone_nr=${SLURM_ARRAY_TASK_ID}
 basename=lightcone${lightcone_nr}
 
 sim_dir=/cosma8/data/dp004/flamingo/Runs/${sim}/
-input_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones/
+input_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/combined_maps/
 output_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/corrected_maps/
 
 \mkdir -p ${output_dir}

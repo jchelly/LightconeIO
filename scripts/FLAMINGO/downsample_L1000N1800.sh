@@ -21,12 +21,17 @@ basename=lightcone${lightcone_nr}
 
 if [[ $SLURM_JOB_NAME == DMO_* ]] ; then
   # DMO maps don't need to be corrected
-  input_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones/
-  output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones_downsampled_${new_nside}/
+  input_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/combined_maps/
+  output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/downsampled_maps_${new_nside}/
 else
   input_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/corrected_maps/
   output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/corrected_downsampled_${new_nside}/
 fi
+
+# Output is a single large file per map, so stripe
+\rm -rf ${output_dir}
+\mkdir -p ${output_dir}
+lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
 
 # Assume script is in $PATH
 script=`which lightcone_io_downsample_maps.py`
