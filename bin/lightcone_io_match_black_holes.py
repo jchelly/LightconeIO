@@ -49,7 +49,7 @@ def match_black_holes(args):
                          "Subhalo/Xcmbp_bh", "Subhalo/Ycmbp_bh", "Subhalo/Zcmbp_bh",
                          "Subhalo/Xcminpot", "Subhalo/Ycminpot", "Subhalo/Zcminpot",
                          "Subhalo/ID_mbp_bh", "Subhalo/n_bh", "Subhalo/Structuretype", 
-                         "Subhalo/SnapNum",
+                         "Subhalo/SnapNum", "Subhalo/ID",
                          "Subhalo/Mass_tot", "Subhalo/Mass_star",
                          "Subhalo/Mass_gas", "Subhalo/Mass_bh")
     treefile = phdf5.MultiFile(args.tree_basename+".%(file_nr)d.hdf5",
