@@ -24,8 +24,9 @@ lightcone_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcones/
 lightcone_base=lightcone${lightcone_nr}
 
 # Where to write the output
-output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcone_halos/
+output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcone_halos/lightcone${lightcone_nr}/
 \mkdir -p ${output_dir}
+lfs setstripe --stripe-count=-1 -stripe-size=32M ${output_dir}
 
 # Assume script is in $PATH
 script=`which lightcone_io_match_black_holes.py`
