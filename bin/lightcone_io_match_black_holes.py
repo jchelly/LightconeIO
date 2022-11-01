@@ -185,7 +185,8 @@ def match_black_holes(args):
         outfile = h5py.File(output_filename, "w", driver="mpio", comm=comm)
         outfile.create_group("Subhalo")
         for name in halo_slice:
-            phdf5.collective_write(outfile, name, halo_slice[name], comm=comm)
+            writebuf = np.ascontiguousarray(halo_slice[name])
+            phdf5.collective_write(outfile, name, writebuf, comm=comm)
         outfile.close()
 
         # Count halos output so far, including this redshift slice
