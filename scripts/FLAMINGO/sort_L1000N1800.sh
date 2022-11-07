@@ -28,16 +28,23 @@ nr_redshift_bins=16
 
 # HEALPix map resolution and ordering for binning on the sky
 nside=16
-order="ring"
+order="nest"
+
+# Storage parameters
+lossy=1
+chunksize=1048576
 
 # Whether to sort by redshift first then pixel (1) or pixel first then redshift (0)
-redshift_first=0
+redshift_first=1
 
 # Output directory
-outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/${name}/lightcones/
+outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/${name}/particle_lightcones/
+\mkdir -p ${outdir}
+lfs setstripe --stripe-count=-1 --stripe-size=32M ${outdir}
 
 # Assume script is in $PATH
 script=`which lightcone_io_index_particles.py`
 
 mpirun python3 -u -m mpi4py ${script} \
-    ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${order} ${redshift_first} ${outdir}
+    ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${order} \
+    ${redshift_first} ${outdir} ${lossy} ${chunksize}

@@ -18,8 +18,8 @@ lightcone_nr=${SLURM_ARRAY_TASK_ID}
 basename=lightcone${lightcone_nr}
 
 sim_dir=/cosma8/data/dp004/flamingo/Runs/${sim}/
-input_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/combined_maps/
-output_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/corrected_maps/
+input_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/corrected_downsampled_4096/
+output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/neutrino_corrected_maps_downsampled_4096/
 
 \mkdir -p ${output_dir}
 lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
@@ -30,4 +30,4 @@ script=`which lightcone_io_correct_maps.py`
 # Find simulation config file
 yml_file=${sim_dir}/flamingo*.yml
 
-mpirun python3 -m mpi4py ${script} ${input_dir} ${yml_file} ${output_dir} ${basename}
+mpirun python3 -m mpi4py ${script} ${input_dir} ${yml_file} ${output_dir} ${sim_dir}/snapshots/flamingo_0000/flamingo_0000.0.hdf5 ${basename}
