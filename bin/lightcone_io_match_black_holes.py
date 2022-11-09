@@ -42,11 +42,23 @@ def match_black_holes(args):
     filename = f"{args.lightcone_dir}/{args.lightcone_base}_particles/{args.lightcone_base}_0000.0.hdf5"
     lightcone = pr.IndexedLightcone(filename, comm=comm)
 
+    # Get snapshot redshifts from the tree file
+    if comm_rank == 0:
+        with h5py.File(args.tree_filename % {"file_nr" : 0}, "r") as treefile:
+            output_snapshots = treefile["Snapshots/SnapNum"][...]
+            output_redshifts = treefile["Snapshots/Redshift"][...]
+        max_snap_nr = np.amax(output_snapshots)
+        redshifts = -np.ones(max_snap_nr+1, dtype=float)
+        for outs, outr in zip(output_snapshots, output_redshifts):
+            redshifts[outs] = outr
+    else:
+        redshifts = None
+    redshifts = comm.bcast(redshifts)
+
     # Read the merger tree data we need:
     # These will all be passed through to the output.
     # The Redshift and [XYZ]cminpot arrays will be updated to the point of lightcone crossing.
-    merger_tree_props = ("Subhalo/Redshift",
-                         "Subhalo/Xcmbp_bh", "Subhalo/Ycmbp_bh", "Subhalo/Zcmbp_bh",
+    merger_tree_props = ("Subhalo/Xcmbp_bh", "Subhalo/Ycmbp_bh", "Subhalo/Zcmbp_bh",
                          "Subhalo/Xcminpot", "Subhalo/Ycminpot", "Subhalo/Zcminpot",
                          "Subhalo/ID_mbp_bh", "Subhalo/n_bh", "Subhalo/Structuretype", 
                          "Subhalo/SnapNum", "Subhalo/ID",
@@ -57,6 +69,10 @@ def match_black_holes(args):
                                comm=comm)
     merger_tree = treefile.read(merger_tree_props)
     message("Read in merger trees")
+
+    # Assign redshifts to the subhalos
+    merger_tree["Subhalo/Redshift"] = redshifts[merger_tree["Subhalo/SnapNum"]]
+    assert np.all(merger_tree["Subhalo/Redshift"] > -0.5)
 
     # Will not try to handle the (very unlikely) case where some ranks have zero halos
     nr_halos = len(merger_tree["Subhalo/Redshift"])
