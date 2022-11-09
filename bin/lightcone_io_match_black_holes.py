@@ -52,7 +52,7 @@ def match_black_holes(args):
                          "Subhalo/SnapNum", "Subhalo/ID",
                          "Subhalo/Mass_tot", "Subhalo/Mass_star",
                          "Subhalo/Mass_gas", "Subhalo/Mass_bh")
-    treefile = phdf5.MultiFile(args.tree_basename+".%(file_nr)d.hdf5",
+    treefile = phdf5.MultiFile(args.tree_filename,
                                file_nr_attr=("Header", "NumberOfFiles"),
                                comm=comm)
     merger_tree = treefile.read(merger_tree_props)
@@ -210,7 +210,7 @@ def match_black_holes(args):
             grp.attrs["CumulativeNumberOfHalos"] = halos_so_far_all
             grp.attrs["LightconeDir"] = args.lightcone_dir
             grp.attrs["LightconeBase"] = args.lightcone_base
-            grp.attrs["TreeBaseName"] = args.tree_basename
+            grp.attrs["TreeFileName"] = args.tree_filename
             outfile.close()
         message(f"  Wrote file: {output_filename}")
 
@@ -226,7 +226,7 @@ if __name__ == "__main__":
     if comm.Get_rank() == 0:
         os.environ['COLUMNS'] = '80' # Can't detect terminal width when running under MPI?
         parser = ThrowingArgumentParser(description='Create lightcone halo catalogues.')
-        parser.add_argument('tree_basename',  help='Location of merger tree data, without trailing .N.hdf5')
+        parser.add_argument('tree_filename',  help='Location of merger tree file')
         parser.add_argument('lightcone_dir',  help='Directory with lightcone particle outputs')
         parser.add_argument('lightcone_base', help='Base name of the lightcone to use')
         parser.add_argument('output_dir',     help='Where to write the output')
