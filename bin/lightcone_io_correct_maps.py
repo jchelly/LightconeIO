@@ -29,6 +29,10 @@ def correct_shell_file(indir, basename, outdir, shell_nr, z_central, neutrino_de
     except OSError:
         pass
 
+    # Check that the input file exists
+    if not(os.path.exists(infile)):
+        raise RuntimeError(f"Input file {infile} does not exist!")
+
     # Copy the file
     #shutil.copyfile(infile, outfile)
     #subprocess.run(["cp", infile, outfile], check=True)
@@ -200,7 +204,8 @@ def correct_maps_mpi(indir, yml_file, outdir, snapfile, basenames):
     # Apply corrections to all shells in parallel
     with MPICommExecutor(comm, root=0) as executor:
         if executor is not None:
-            executor.starmap(correct_shell_file, args)
+            # Need to fetch results to ensure exception is raised on failure
+            results = list(executor.starmap(correct_shell_file, args))
 
 
 if __name__ == "__main__":
