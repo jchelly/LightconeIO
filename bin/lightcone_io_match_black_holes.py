@@ -1,6 +1,7 @@
 #!/bin/env python
 
 import os
+import sys
 import numpy as np
 import h5py
 import argparse
@@ -32,7 +33,6 @@ def message(m):
 
 def match_black_holes(args):
 
-    import sys
     if comm_rank > 0:
         sys.stderr = open('/dev/null', 'w')
 
