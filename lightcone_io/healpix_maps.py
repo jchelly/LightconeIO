@@ -165,8 +165,13 @@ class Shell(collections.abc.Mapping):
             if file_nr == 0:
                 with h5py.File(fname, "r") as infile:
                     nr_files = int(infile["Shell"].attrs["nr_files_per_shell"])
+                    length_unit_cgs = float(infile["Units"].attrs["Unit length in cgs (U_L)"])                        
                     self.comoving_inner_radius = infile["Shell"].attrs["comoving_inner_radius"][0]
                     self.comoving_outer_radius = infile["Shell"].attrs["comoving_outer_radius"][0]
+                    if unyt is not None:
+                        length_unit = unyt.cm * length_unit_cgs
+                        self.comoving_inner_radius = unyt.unyt_quantity(self.comoving_inner_radius, units=length_unit)
+                        self.comoving_outer_radius = unyt.unyt_quantity(self.comoving_outer_radius, units=length_unit)
                     self.map_names = []
                     for name in infile:
                         if "nside" in infile[name].attrs:
