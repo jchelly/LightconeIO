@@ -7,7 +7,7 @@
 #SBATCH -p cosma8
 #SBATCH -A dp004
 #SBATCH -t 72:00:00
-#SBATCH --reservation=jlvc76_53
+#
 
 module purge
 module load python/3.10.1
