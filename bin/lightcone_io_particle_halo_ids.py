@@ -16,6 +16,7 @@ comm_rank = comm.Get_rank()
 import virgo.util.match as match
 import virgo.mpi.parallel_hdf5 as phdf5
 import virgo.mpi.parallel_sort as psort
+import virgo.mpi.util as mpi_util
 
 class ArgumentParserError(Exception): pass
 
@@ -24,14 +25,20 @@ class ThrowingArgumentParser(argparse.ArgumentParser):
         sys.stderr.write(message+"\n")
         raise ArgumentParserError(message)
 
+
 def message(m):
     if comm_rank == 0:
         t1 = time.time()
         elapsed = t1-t0
-        print(f"{elapsed:.1f}: {m}")
+        print(f"{elapsed:.1f}s: {m}")
 
-def find_particle_halo_ids(args):
-    
+
+def read_lightcone_halo_positions_and_radii(args):
+    """
+    Read in the lightcone halo catalogue and cross reference with SOAP
+    to find the SO radius for each halo in the lightcone.
+    """
+
     # Parallel read the halo catalogue: need (x,y,z), snapnum, id
     message("Reading lightcone halo catalogue")
     halo_lightcone_datasets = ("Xcminpot", "Ycminpot", "Zcminpot", "SnapNum", "ID")
@@ -72,7 +79,9 @@ def find_particle_halo_ids(args):
     min_snap = comm.allreduce(np.amin(unique_snap), op=MPI.MIN)
     max_snap = comm.allreduce(np.amax(unique_snap), op=MPI.MAX)
 
-    # Make snapnum, count and offset arrays which include snapshots not present on this rank
+    # Make snapnum, count and offset arrays which include snapshots not present on this rank:
+    # We're going to do collective reads of the SOAP outputs so all ranks need to agree on
+    # what range of snapshots to do.
     nr_snaps = max_snap - min_snap + 1
     unique_snap_all = np.arange(min_snap, max_snap+1, dtype=int)
     snap_offset_all = np.zeros(nr_snaps, dtype=int)
@@ -90,7 +99,7 @@ def find_particle_halo_ids(args):
 
     # Loop over snapshots
     for snapnum in unique_snap_all:
-        
+
         # Datasets to read from SOAP
         soap_datasets = ("VR/ID", radius_name)
 
@@ -114,6 +123,84 @@ def find_particle_halo_ids(args):
     # All halos should have been assigned a radius
     assert np.all(halo_lightcone_data[radius_name] >= 0)
 
+    return halo_lightcone_data
+
+
+def read_lightcone_index(args):
+    """
+    Read the index file and determine names of all particle files
+    and which particle types are present
+    """
+    
+    # Particle types which may be in the lightcone:
+    type_names = ("BH", "DM", "Gas", "Neutrino", "Stars")
+    type_z_range = {}
+
+    # Now, find the lightcone particle output and read the index info
+    index_file = args.lightcone_dir+"/"+args.lightcone_base+"_index.hdf5"
+    if comm_rank == 0:
+        with h5py.File(index_file, "r") as index:
+            lc = index["Lightcone"]
+            nr_mpi_ranks = int(lc.attrs["nr_mpi_ranks"])
+            final_file_on_rank = lc.attrs["final_particle_file_on_rank"]
+            for tn in type_names:
+                min_z = float(lc.attrs["minimum_redshift_"+tn])
+                max_z = float(lc.attrs["maximum_redshift_"+tn])
+                if max_z > min_z:
+                    type_z_range[tn] = (min_z, max_z)
+    else:
+        nr_mpi_ranks = None
+        final_file_on_rank = None
+        type_z_range = None
+    nr_mpi_ranks, final_file_on_rank, type_z_range = comm.bcast((nr_mpi_ranks, final_file_on_rank, type_z_range))
+
+    # Report which particle types we found
+    for name in type_z_range:
+        min_z, max_z = type_z_range[name]
+        message(f"have particles for type {name} from z={min_z} to z={max_z}")
+
+    # Make a full list of files to read
+    all_particle_files = []
+    for rank_nr in range(nr_mpi_ranks):
+        for file_nr in range(final_file_on_rank[rank_nr]+1):
+            filename = f"{args.lightcone_dir}/{args.lightcone_base}_particles/{args.lightcone_base}_{file_nr:04d}.{rank_nr}.hdf5"
+            all_particle_files.append(filename)
+
+    return type_z_range, all_particle_files
+
+
+def read_lightcone_particles(all_particle_files, ptype):
+    """
+    Read in the lightcone particle positions for one particle type
+    """
+
+    nr_files = len(all_particle_files)
+    message(f"Reading positions for type {ptype} from {nr_files} files")
+
+    # Assign files to MPI ranks and find files this rank will read
+    files_per_rank = np.zeros(comm_size, dtype=int)
+    files_per_rank[:] = len(all_particle_files) // comm_size
+    files_per_rank[:len(all_particle_files) % comm_size] += 1
+    assert np.sum(files_per_rank) == len(all_particle_files)
+    first_file_rank = np.cumsum(files_per_rank) - files_per_rank
+    local_particle_files = all_particle_files[first_file_rank[comm_rank]:first_file_rank[comm_rank]+files_per_rank[comm_rank]]
+    
+    # Read the positions for this particle type
+    pos = []
+    for filename in local_particle_files:
+        with h5py.File(filename, "r") as infile:
+            pos.append(infile[ptype]["Coordinates"][...])
+    if len(pos) > 0:
+        pos = np.concatenate(pos)
+    else:
+        pos = None
+    pos = mpi_util.replace_none_with_zero_size(pos, comm=comm)
+
+    nr_particles_local = pos.shape[0]
+    nr_particles_total = comm.allreduce(nr_particles_local)
+    message(f"Read in {nr_particles_total} particles")
+
+    return pos
 
 
     # For each particle type
@@ -150,8 +237,21 @@ if __name__ == "__main__":
         MPI.Finalize()
         sys.exit(0)
 
-    find_particle_halo_ids(args)
+    message(f"Starting on {comm_size} MPI ranks")
+
+    # Read in position and radius for halos in the lightcone
+    #halo_lightcone_data = read_lightcone_halo_positions_and_radii(args)
+
+    # Locate the particle data
+    type_z_range, all_particle_files = read_lightcone_index(args)
+
+    # Loop over types to do
+    for ptype in ("BH",):
+        
+        # Read in positions of lightcone particles of this type
+        pos = read_lightcone_particles(all_particle_files, ptype)
+
 
 
     comm.barrier()
-    
+    message("Done.")
