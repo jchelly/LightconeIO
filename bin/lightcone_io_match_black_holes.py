@@ -51,7 +51,7 @@ def match_black_holes(args):
             # Also read in VR unit information
             vr_unit_info = {}
             for name in treefile["UnitInfo"].attrs:
-                vr_unit_info[name] = treefile["UnitInfo"].attrs[name]
+                vr_unit_info[name] = float(treefile["UnitInfo"].attrs[name].decode())
             # And simulation information
             vr_sim_info = {}
             for name in treefile["SimulationInfo"].attrs:
@@ -83,19 +83,18 @@ def match_black_holes(args):
             assert np.all(boxsize==boxsize[0])
             boxsize = boxsize[0]
     else:
-        physical_constants = None
+        physical_constants_cgs = None
         snapshot_units = None
         boxsize = None
-    physical_constants, snapshot_units, boxsize = comm.bcast((physical_constants, snapshot_units, boxsize))
+    physical_constants_cgs, snapshot_units, boxsize = comm.bcast((physical_constants_cgs, snapshot_units, boxsize))
 
     # Read the merger tree data we need:
     # The Redshift and [XYZ]cminpot arrays will be updated to the point of lightcone crossing.
-    merger_tree_props = ("Subhalo/Xcmbp_bh", "Subhalo/Ycmbp_bh", "Subhalo/Zcmbp_bh",
-                         "Subhalo/Xcminpot", "Subhalo/Ycminpot", "Subhalo/Zcminpot",
-                         "Subhalo/ID_mbp_bh", "Subhalo/n_bh", "Subhalo/Structuretype", 
-                         "Subhalo/SnapNum", "Subhalo/ID",
-                         "Subhalo/Mass_tot", "Subhalo/Mass_star",
-                         "Subhalo/Mass_gas", "Subhalo/Mass_bh")
+    position_props = ("Subhalo/Xcmbp_bh", "Subhalo/Ycmbp_bh", "Subhalo/Zcmbp_bh",
+                      "Subhalo/Xcminpot", "Subhalo/Ycminpot", "Subhalo/Zcminpot")
+    mass_props     = ("Subhalo/Mass_tot", "Subhalo/Mass_star", "Subhalo/Mass_gas", "Subhalo/Mass_bh")
+    other_props    = ("Subhalo/ID_mbp_bh", "Subhalo/n_bh", "Subhalo/Structuretype", "Subhalo/SnapNum", "Subhalo/ID")
+    merger_tree_props = (position_props + mass_props + other_props)
     treefile = phdf5.MultiFile(args.tree_filename,
                                file_nr_attr=("Header", "NumberOfFiles"),
                                comm=comm)
@@ -201,17 +200,63 @@ def match_black_holes(args):
 
         # Find conversion factor to put positions into comoving, no h units
         a = 1.0/(1.0+halo_slice["Subhalo/Redshift"])
+        assert np.all(a[0]==a)
+        a = float(a[0])
         h = float(vr_sim_info["h_val"])
         if vr_unit_info["Comoving_or_Physical"] == 0:
             # VR position units are physical with no h dependence. Need to convert to comoving.
             halo_pos_conversion = 1.0/a
+            mass_h_exponent = 0.0
         else:
             # VR position units are comoving 1/h. Multiply out the h factor.
             halo_pos_conversion = h
+            mass_h_exponent = -1.0
 
         # Convert VR halo positions into SWIFT snapshot length units
         swift_length_unit_in_mpc = snapshot_units["Unit length in cgs (U_L)"] / (1.0e6*physical_constants_cgs["parsec"])
         halo_pos_conversion *= (vr_unit_info["Length_unit_to_kpc"]/1000.0) / swift_length_unit_in_mpc
+
+        # Construct metadata for output quantites
+        # Lengths: will be converted to comoving, no h, swift snapshot units
+        length_unit_cgs = snapshot_units["Unit length in cgs (U_L)"]
+        length_attrs = {
+            "U_I exponent" : (0.0,),
+            "U_L exponent" : (1.0,),
+            "U_M exponent" : (0.0,),
+            "U_T exponent" : (0.0,),
+            "U_t exponent" : (0.0,),
+            "a-scale exponent" : (1.0,),
+            "h-scale exponent" : (0.0,),
+            "Conversion factor to CGS (not including cosmological corrections)" : (length_unit_cgs,),
+            "Conversion factor to CGS (including cosmological corrections)" : (a*length_unit_cgs,),
+        }
+        
+        # Masses: just describe the existing VR units
+        mass_unit_cgs = vr_unit_info["Mass_unit_to_solarmass"] * physical_constants_cgs["solar_mass"]
+        mass_attrs = {
+            "U_I exponent" : (0.0,),
+            "U_L exponent" : (0.0,),
+            "U_M exponent" : (1.0,),
+            "U_T exponent" : (0.0,),
+            "U_t exponent" : (0.0,),
+            "a-scale exponent" : (0.0,),
+            "h-scale exponent" : (mass_h_exponent,),
+            "Conversion factor to CGS (not including cosmological corrections)" : (mass_unit_cgs,),
+            "Conversion factor to CGS (including cosmological corrections)" : (mass_unit_cgs*(h**mass_h_exponent),),
+        }
+        
+        # Dimensionless quantities
+        dimensionless_attrs = {
+            "U_I exponent" : (0.0,),
+            "U_L exponent" : (0.0,),
+            "U_M exponent" : (0.0,),
+            "U_T exponent" : (0.0,),
+            "U_t exponent" : (0.0,),
+            "a-scale exponent" : (0.0,),
+            "h-scale exponent" : (0.0,),
+            "Conversion factor to CGS (not including cosmological corrections)" : (1.0,),
+            "Conversion factor to CGS (including cosmological corrections)" : (1.0,),
+        }
 
         # Compute the position of each halo in the output:
         #
@@ -243,6 +288,12 @@ def match_black_holes(args):
         # Compute halo potential minimum position in lightcone
         halo_pos_in_lightcone = bh_pos_in_lightcone + bh_to_minpot_vector
 
+        # Report largest offset between BH and potential minimum
+        max_offset = np.amax(np.abs(bh_to_minpot_vector.flatten()))
+        max_offset = comm.allreduce(max_offset, op=MPI.MAX)
+        if comm_rank == 0:
+            message(f"  Maximum minpot/bh offset = {max_offset} (SWIFT length units, comoving)")
+
         # Overwrite the halo position in the output catalogue
         halo_slice["Subhalo/Xcminpot"] = halo_pos_in_lightcone[:,0]
         halo_slice["Subhalo/Ycminpot"] = halo_pos_in_lightcone[:,1]
@@ -254,13 +305,26 @@ def match_black_holes(args):
         halo_slice["Subhalo/Redshift"] = 1.0/particle_data["ExpansionFactors"][matched]-1.0
         message(f"  Computed potential minimum position in lightcone")
 
+        # Function to add attributes to a dataset
+        def write_attributes(dset, attrs):
+            for name in attrs:
+                dset.attrs[name] = attrs[name]
+
         # Write out the halo catalogue for this snapshot
         output_filename = f"{args.output_dir}/lightcone_halos_{redshift_nr:04d}.hdf5"
         outfile = h5py.File(output_filename, "w", driver="mpio", comm=comm)
         outfile.create_group("Subhalo")
         for name in halo_slice:
+            # Write the data
             writebuf = np.ascontiguousarray(halo_slice[name])
-            phdf5.collective_write(outfile, name, writebuf, comm=comm)
+            dset = phdf5.collective_write(outfile, name, writebuf, comm=comm)
+            # Add unit info
+            if name in position_props:
+                write_attributes(dset, length_attrs)
+            elif name in mass_props:
+                write_attributes(dset, mass_attrs)
+            else:
+                write_attributes(dset, dimensionless_attrs)
         outfile.close()
 
         # Count halos output so far, including this redshift slice
