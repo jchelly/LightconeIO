@@ -2,12 +2,14 @@
 
 import os
 import sys
+import argparse
 import time
 t0 = time.time()
 
 import numpy as np
 import h5py
-import argparse
+import scipy.spatial
+
 from mpi4py import MPI
 comm = MPI.COMM_WORLD
 comm_size = comm.Get_size()
@@ -203,16 +205,66 @@ def read_lightcone_particles(all_particle_files, ptype):
     return pos
 
 
-    # For each particle type
-    #  - parallel read lightcone particles
-    #  - build kdtree for local particles
-    #  - tree search and tag particles within r200c of local halos with halo ID (what to do about overlap?)
-    #  - pass halos to next MPI task and repeat
+def pass_array(comm, arr):
+    """
+    Send arr to the next rank and return array received from previous
+    """
 
-    # Write new file with particle halo membership
-    
+    # Find ranks to communicate with
+    next_rank = (comm_rank + 1) % comm_size
+    prev_rank = (comm_rank - 1) % comm_size
+
+    # Find type and shape of array to receive
+    dtype = arr.dtype
+    shape = list(arr.shape)
+    nr_recv = comm.sendrecv(shape[0], next_rank, source=prev_rank)
+    shape[0] = nr_recv
+
+    # Transfer the data
+    arr_recv = np.ndarray(shape, dtype=dtype)
+    comm.Sendrecv(arr, next_rank, recvbuf=arr_recv, source=prev_rank)
+
+    return arr_recv
+
+
+def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
+    """
+    Tag particles which are within the SO radius of a halo
+    """
+
     # Possible optimization:
     # Partition particles by x coord and send each rank just a slice of the halo catalogue
+
+    # Allocate output array
+    nr_parts = part_pos.shape[0]
+    part_halo_id = -np.ones(nr_parts, dtype=halo_id.dtype)
+
+    # Find number of halos per rank
+    halo_per_rank = np.asarray(comm.allgather(halo_pos.shape[0]), dtype=int)
+
+    # Build a kdtree with the local particles
+    tree = scipy.spatial.KDTree(part_pos)
+    
+    # Loop over other ranks to communicate with
+    for comm_nr in range(comm_size):
+
+        message("Communication step {comm_nr} of {comm_size}")
+    
+        # Loop over local halos
+        for i in range(len(halo_id)):
+            
+            # Identify particles within this halo's radius
+            idx = tree.query_ball_point(halo_pos[i,:], halo_radius[i])
+
+            # Tag particles within the radius with the halo ID
+            part_halo_id[idx] = halo_id[i]
+
+        # Pass local halo catalogue on to the next rank
+        halo_id = pass_array(halo_id)
+        halo_pos = pass_array(halo_pos)
+        halo_radius = pass_array(halo_radius)
+
+    return part_halo_id
 
 
 if __name__ == "__main__":
