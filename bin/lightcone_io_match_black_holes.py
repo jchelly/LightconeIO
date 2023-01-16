@@ -66,7 +66,7 @@ def match_black_holes(args):
         vr_sim_info = None
     redshifts, vr_unit_info, vr_sim_info = comm.bcast((redshifts, vr_unit_info, vr_sim_info))
 
-    # Get physical constants from SWIFT:
+    # Get physical constants etc from SWIFT:
     # These are needed to interpret VR unit metadata since we want to
     # assume exactly the same definitions of Mpc, Msolar etc that SWIFT used.
     if comm_rank == 0:
@@ -79,10 +79,14 @@ def match_black_holes(args):
             group = infile["Units"]
             for name in group.attrs:
                 snapshot_units[name] = float(group.attrs[name])
+            boxsize = infile["Header"].attrs["BoxSize"]
+            assert np.all(boxsize==boxsize[0])
+            boxsize = boxsize[0]
     else:
         physical_constants = None
         snapshot_units = None
-    physical_constants, snapshot_units = comm.bcast((physical_constants, snapshot_units))
+        boxsize = None
+    physical_constants, snapshot_units, boxsize = comm.bcast((physical_constants, snapshot_units, boxsize))
 
     # Read the merger tree data we need:
     # The Redshift and [XYZ]cminpot arrays will be updated to the point of lightcone crossing.
@@ -218,14 +222,26 @@ def match_black_holes(args):
         #
         # We want to compute the position in the lightcone of the potential minimum.
         #
+
+        # Position of the matched BH particle in the lightcone particle output
         bh_pos_in_lightcone = particle_data["Coordinates"][matched,...].ndarray_view()
+
+        # Position of the halo's most bound black hole, from VR
         bh_pos_in_snapshot  = np.column_stack((halo_slice["Subhalo/Xcmbp_bh"],
                                                halo_slice["Subhalo/Ycmbp_bh"],
                                                halo_slice["Subhalo/Zcmbp_bh"])) * halo_pos_conversion
+        
+        # Position of the halo's potential minimum, from VR
         halo_pos_in_snapshot = np.column_stack((halo_slice["Subhalo/Xcminpot"],
                                                 halo_slice["Subhalo/Ycminpot"],
                                                 halo_slice["Subhalo/Zcminpot"])) * halo_pos_conversion
-        halo_pos_in_lightcone = bh_pos_in_lightcone + (halo_pos_in_snapshot - bh_pos_in_snapshot)
+        
+        # Vector from the most bound BH to the potential minimum - may need box wrapping
+        bh_to_minpot_vector = halo_pos_in_snapshot - bh_pos_in_snapshot
+        bh_to_minpot_vector = ((bh_to_minpot_vector+0.5*boxsize) % boxsize) - 0.5*boxsize
+
+        # Compute halo potential minimum position in lightcone
+        halo_pos_in_lightcone = bh_pos_in_lightcone + bh_to_minpot_vector
 
         # Overwrite the halo position in the output catalogue
         halo_slice["Subhalo/Xcminpot"] = halo_pos_in_lightcone[:,0]
