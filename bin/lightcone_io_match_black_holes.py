@@ -42,21 +42,49 @@ def match_black_holes(args):
     filename = f"{args.lightcone_dir}/{args.lightcone_base}_particles/{args.lightcone_base}_0000.0.hdf5"
     lightcone = pr.IndexedLightcone(filename, comm=comm)
 
-    # Get snapshot redshifts from the tree file
+    # Get snapshot redshifts and other metadata from the tree file
     if comm_rank == 0:
         with h5py.File(args.tree_filename % {"file_nr" : 0}, "r") as treefile:
+            # Read snapshot redshifts
             output_snapshots = treefile["Snapshots/SnapNum"][...]
             output_redshifts = treefile["Snapshots/Redshift"][...]
+            # Also read in VR unit information
+            vr_unit_info = {}
+            for name in treefile["UnitInfo"].attrs:
+                vr_unit_info[name] = treefile["UnitInfo"].attrs[name]
+            # And simulation information
+            vr_sim_info = {}
+            for name in treefile["SimulationInfo"].attrs:
+                vr_sim_info[name] = treefile["SimulationInfo"].attrs[name]
         max_snap_nr = np.amax(output_snapshots)
         redshifts = -np.ones(max_snap_nr+1, dtype=float)
         for outs, outr in zip(output_snapshots, output_redshifts):
             redshifts[outs] = outr
     else:
         redshifts = None
-    redshifts = comm.bcast(redshifts)
+        vr_unit_info = None
+        vr_sim_info = None
+    redshifts, vr_unit_info, vr_sim_info = comm.bcast((redshifts, vr_unit_info, vr_sim_info))
+
+    # Get physical constants from SWIFT:
+    # These are needed to interpret VR unit metadata since we want to
+    # assume exactly the same definitions of Mpc, Msolar etc that SWIFT used.
+    if comm_rank == 0:
+        physical_constants_cgs = {}
+        snapshot_units = {}
+        with h5py.File(args.snapshot_file, "r") as infile:
+            group = infile["PhysicalConstants/CGS"]
+            for name in group.attrs:
+                physical_constants_cgs[name] = float(group.attrs[name])
+            group = infile["Units"]
+            for name in group.attrs:
+                snapshot_units[name] = float(group.attrs[name])
+    else:
+        physical_constants = None
+        snapshot_units = None
+    physical_constants, snapshot_units = comm.bcast((physical_constants, snapshot_units))
 
     # Read the merger tree data we need:
-    # These will all be passed through to the output.
     # The Redshift and [XYZ]cminpot arrays will be updated to the point of lightcone crossing.
     merger_tree_props = ("Subhalo/Xcmbp_bh", "Subhalo/Ycmbp_bh", "Subhalo/Zcmbp_bh",
                          "Subhalo/Xcminpot", "Subhalo/Ycminpot", "Subhalo/Zcminpot",
@@ -167,6 +195,20 @@ def match_black_holes(args):
             halo_slice[name] = psort.fetch_elements(merger_tree[name][i1:i2,...], halo_index, comm=comm)
         message(f"  Found halo properties for this slice")
 
+        # Find conversion factor to put positions into comoving, no h units
+        a = 1.0/(1.0+halo_slice["Subhalo/Redshift"])
+        h = float(vr_sim_info["h_val"])
+        if vr_unit_info["Comoving_or_Physical"] == 0:
+            # VR position units are physical with no h dependence. Need to convert to comoving.
+            halo_pos_conversion = 1.0/a
+        else:
+            # VR position units are comoving 1/h. Multiply out the h factor.
+            halo_pos_conversion = h
+
+        # Convert VR halo positions into SWIFT snapshot length units
+        swift_length_unit_in_mpc = snapshot_units["Unit length in cgs (U_L)"] / (1.0e6*physical_constants_cgs["parsec"])
+        halo_pos_conversion *= (vr_unit_info["Length_unit_to_kpc"]/1000.0) / swift_length_unit_in_mpc
+
         # Compute the position of each halo in the output:
         #
         # We know:
@@ -179,10 +221,10 @@ def match_black_holes(args):
         bh_pos_in_lightcone = particle_data["Coordinates"][matched,...].ndarray_view()
         bh_pos_in_snapshot  = np.column_stack((halo_slice["Subhalo/Xcmbp_bh"],
                                                halo_slice["Subhalo/Ycmbp_bh"],
-                                               halo_slice["Subhalo/Zcmbp_bh"]))
+                                               halo_slice["Subhalo/Zcmbp_bh"])) * halo_pos_conversion
         halo_pos_in_snapshot = np.column_stack((halo_slice["Subhalo/Xcminpot"],
                                                 halo_slice["Subhalo/Ycminpot"],
-                                                halo_slice["Subhalo/Zcminpot"]))
+                                                halo_slice["Subhalo/Zcminpot"])) * halo_pos_conversion
         halo_pos_in_lightcone = bh_pos_in_lightcone + (halo_pos_in_snapshot - bh_pos_in_snapshot)
 
         # Overwrite the halo position in the output catalogue
@@ -245,6 +287,7 @@ if __name__ == "__main__":
         parser.add_argument('tree_filename',  help='Location of merger tree file')
         parser.add_argument('lightcone_dir',  help='Directory with lightcone particle outputs')
         parser.add_argument('lightcone_base', help='Base name of the lightcone to use')
+        parser.add_argument('snapshot_file',  help='Name of a snapshot file (to get unit info)')
         parser.add_argument('output_dir',     help='Where to write the output')
         try:
             args = parser.parse_args()
