@@ -140,16 +140,35 @@ def match_black_holes(args):
 
     # Loop over unique redshifts in the trees, excluding the last
     halos_so_far = 0
-    for redshift_nr in range(len(redshifts)-1):
+    for redshift_nr in range(len(redshifts)):
         
-        # Find redshift range and range of halos for this iteration
-        z1 = redshifts[redshift_nr]
-        z2 = redshifts[redshift_nr+1]
+        # Find the range of halos which exist at this redshift
         i1 = first_at_redshift[redshift_nr]
         i2 = first_at_next_redshift[redshift_nr]
         nr_halos_in_slice = i2-i1
         nr_halos_in_slice_all = comm.allreduce(nr_halos_in_slice)
-        message(f"Processing {nr_halos_in_slice_all} halos in redshift range {z1:.2f} to {z2:.2f}")
+
+        # Find the range of redshifts in the lightcone which we will populate using
+        # halos from this snapshot
+        
+        # Original method: each snapshot populates from it's own redshift to the redshift of
+        # the previous snapshot
+        #z1 = redshifts[redshift_nr]
+        #z2 = redshifts[redshift_nr+1]
+
+        # Each snapshot populates a redshift range which reaches half way to adjacent snapshots
+        # (range is truncated for the first and last snapshots)
+        if redshift_nr == 0:
+            z1 = redshifts[redshift_nr]
+        else:
+            z1 = 0.5*(redshifts[redshift_nr-1]+redshifts[redshift_nr])
+        if redshift_nr == len(redshifts)-1:
+            z2 = redshifts[redshift_nr]
+        else:
+            z2 = 0.5*(redshifts[redshift_nr]+redshifts[redshift_nr+1])
+
+        #message(f"Processing {nr_halos_in_slice_all} halos in redshift range {z1:.2f} to {z2:.2f}")
+        message(f"  Using {nr_halos_in_slice_all} halos at z={redshifts[redshift_nr]:.3f} to populate range z={z1:.3f} to z={z2:.3f}")
 
         # Find halo most bound BH IDs
         id_mbp_bh = merger_tree["Subhalo/ID_mbp_bh"][i1:i2]
@@ -198,7 +217,8 @@ def match_black_holes(args):
             halo_slice[name] = psort.fetch_elements(merger_tree[name][i1:i2,...], halo_index, comm=comm)
         message(f"  Found halo properties for this slice")
 
-        # Find conversion factor to put positions into comoving, no h units
+        # Find conversion factor to put positions into comoving, no h units.
+        # This needs to be a at the redshift of the snapshot the halo is taken from.
         a = 1.0/(1.0+halo_slice["Subhalo/Redshift"])
         assert np.all(a[0]==a)
         a = float(a[0])
