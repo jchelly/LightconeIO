@@ -229,7 +229,7 @@ def match_black_holes(args):
             mass_h_exponent = 0.0
         else:
             # VR position units are comoving 1/h. Multiply out the h factor.
-            halo_pos_conversion = h
+            halo_pos_conversion = 1.0/h
             mass_h_exponent = -1.0
 
         # Convert VR halo positions into SWIFT snapshot length units
