@@ -35,17 +35,20 @@ def message(m):
         print(f"{elapsed:.1f}s: {m}")
 
 
-def read_lightcone_halo_positions_and_radii(args):
+def read_lightcone_halo_positions_and_radii(args, radius_name):
     """
     Read in the lightcone halo catalogue and cross reference with SOAP
     to find the SO radius for each halo in the lightcone.
+
+    Assumes that positions in the lightcone are comoving and in the
+    same units as SOAP (except for the expansion factor dependence).
     """
 
     # Parallel read the halo catalogue: need (x,y,z), snapnum, id
     message("Reading lightcone halo catalogue")
     halo_lightcone_datasets = ("Xcminpot", "Ycminpot", "Zcminpot", "SnapNum", "ID")
     mf = phdf5.MultiFile(args.halo_lightcone_filenames, file_nr_attr=("Header", "NumberOfFiles"), comm=comm)
-    halo_lightcone_data = mf.read(halo_lightcone_datasets, group="Subhalo")
+    halo_lightcone_data = mf.read(halo_lightcone_datasets, group="Subhalo", read_attributes=True)
 
     # Repartition halos for better load balancing
     message("Repartition halo catalogue")
@@ -57,6 +60,16 @@ def read_lightcone_halo_positions_and_radii(args):
     assert np.sum(nr_desired) == nr_total_halos
     for name in halo_lightcone_data:
         halo_lightcone_data[name] = psort.repartition(halo_lightcone_data[name], nr_desired, comm=comm)
+
+    # Merge x/y/z into a single array
+    halo_pos = np.column_stack((halo_lightcone_data["Xcminpot"],
+                                halo_lightcone_data["Ycminpot"],
+                                halo_lightcone_data["Zcminpot"]))
+    del halo_lightcone_data["Xcminpot"]
+    del halo_lightcone_data["Ycminpot"]
+    del halo_lightcone_data["Zcminpot"]
+    halo_lightcone_data["Pos_minpot"] = halo_pos 
+    del halo_pos
 
     # The input catalogue is ordered by redshift, but we want a mix of redshifts on each rank
     message("Reassign halos to MPI ranks")
@@ -95,7 +108,6 @@ def read_lightcone_halo_positions_and_radii(args):
         snap_count_all[i] = sc
 
     # Allocate storage for radius of each lightcone halo
-    radius_name = "SO/200_crit/SORadius"
     nr_halos = len(halo_lightcone_data["ID"])
     halo_lightcone_data[radius_name] = -np.ones(nr_halos, dtype=float)
 
@@ -108,7 +120,19 @@ def read_lightcone_halo_positions_and_radii(args):
         # Read the SOAP catalogue for this snapshot
         message(f"Reading SOAP output for snapshot {snapnum}")
         mf = phdf5.MultiFile(args.soap_filenames % {"snap_nr" : snapnum}, file_idx=(0,), comm=comm)
-        soap_data = mf.read(soap_datasets)
+        soap_data = mf.read(soap_datasets, read_attributes=True)
+
+        # Get the expansion factor of this snapshot
+        if comm_rank == 0:
+            with h5py.File(args.soap_filenames % {"snap_nr" : snapnum}, "r") as infile:
+                a = float(infile["SWIFT"]["Header"].attrs["Scale-factor"])
+        else:
+            a = None
+        a = comm.bcast(a)
+
+        # Ensure radii are in comoving units
+        radius_a_exponent = float(soap_data[radius_name].attrs["a-scale exponent"])
+        soap_data[radius_name] *= a**(radius_a_exponent-1.0)
 
         # Match lightcone halos at this snapshot to SOAP halos by ID
         message("Finding lightcone halos in SOAP output")
@@ -248,7 +272,7 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     # Loop over other ranks to communicate with
     for comm_nr in range(comm_size):
 
-        message("Communication step {comm_nr} of {comm_size}")
+        message(f"Communication step {comm_nr} of {comm_size}")
     
         # Loop over local halos
         for i in range(len(halo_id)):
@@ -260,9 +284,9 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
             part_halo_id[idx] = halo_id[i]
 
         # Pass local halo catalogue on to the next rank
-        halo_id = pass_array(halo_id)
-        halo_pos = pass_array(halo_pos)
-        halo_radius = pass_array(halo_radius)
+        halo_id = pass_array(comm, halo_id)
+        halo_pos = pass_array(comm, halo_pos)
+        halo_radius = pass_array(comm, halo_radius)
 
     return part_halo_id
 
@@ -292,7 +316,8 @@ if __name__ == "__main__":
     message(f"Starting on {comm_size} MPI ranks")
 
     # Read in position and radius for halos in the lightcone
-    #halo_lightcone_data = read_lightcone_halo_positions_and_radii(args)
+    radius_name = "SO/200_crit/SORadius"
+    halo_lightcone_data = read_lightcone_halo_positions_and_radii(args, radius_name)
 
     # Locate the particle data
     type_z_range, all_particle_files = read_lightcone_index(args)
@@ -301,9 +326,19 @@ if __name__ == "__main__":
     for ptype in ("BH",):
         
         # Read in positions of lightcone particles of this type
-        pos = read_lightcone_particles(all_particle_files, ptype)
+        message(f"Reading particles of type {ptype}")
+        part_pos = read_lightcone_particles(all_particle_files, ptype)
 
+        # Assign group indexes to the particles
+        message("Assigning group indexes")
+        halo_id = halo_lightcone_data["ID"]
+        halo_pos = halo_lightcone_data["Pos_minpot"]
+        halo_radius = halo_lightcone_data[radius_name]
+        part_halo_id = compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos)
 
+        # Tidy up before reading next particle type
+        del part_pos
+        del part_halo_id
 
     comm.barrier()
     message("Done.")
