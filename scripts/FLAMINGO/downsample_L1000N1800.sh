@@ -19,15 +19,6 @@ sim="L1000N1800/${SLURM_JOB_NAME}"
 lightcone_nr=${SLURM_ARRAY_TASK_ID}
 basename=lightcone${lightcone_nr}
 
-# if [[ $SLURM_JOB_NAME == DMO_* ]] ; then
-#   # DMO maps don't need to be corrected
-#   input_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/combined_maps/
-#   output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/downsampled_maps_${new_nside}/
-# else
-#   input_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/corrected_maps/
-#   output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/corrected_downsampled_${new_nside}/
-# fi
-
 input_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/neutrino_corrected_maps/
 output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/neutrino_corrected_maps_downsampled_${new_nside}/
 

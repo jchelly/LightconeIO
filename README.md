@@ -238,4 +238,32 @@ to read in chunks of particles in the required redshift range. It calculates
 which HEALPix pixel each particle maps onto using healpy and adds the particle's
 mass to that pixel. The resulting map is written to a new HDF5 file.
 
+### Combining, correcting and downsampling FLAMINGO L1000N1800 maps on Cosma
 
+To postprocess maps from a 1Gpc FLAMINGO run on Cosma:
+
+  * Download and install this module
+```
+git clone git@github.com:jchelly/LightconeIO.git
+module load python/3.10.1
+cd LightconeIO
+pip install --user .
+```
+  * Modify the output location (variable `output_dir`) in these scripts to point at a writable location:
+```
+scripts/FLAMINGO/combine_L1000N1800.sh
+scripts/FLAMINGO/correct_L1000N1800.sh
+scripts/FLAMINGO/downsample_L1000N1800.sh
+```
+  * Submit the script to combine the maps into one file per shell. The job name (sbatch -J) specifies which simulation to process. The job array index (sbatch --array=...) is which lightcone(s) to do. E.g. for L1000N1800/HYDRO_FIDUCIAL:
+```
+sbatch -J HYDRO_FIDUCIAL --array=0-1 ./combine_L1000N1800.sh
+```
+  * Once that completes, the combined maps can be corrected:
+```
+sbatch -J HYDRO_FIDUCIAL --array=0-1 ./correct_L1000N1800.sh
+```
+  * And then the corrected map is downsampled:
+```
+sbatch -J HYDRO_FIDUCIAL --array=0-1 ./downsample_L1000N1800.sh
+```

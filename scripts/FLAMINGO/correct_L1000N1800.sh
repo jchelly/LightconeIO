@@ -18,7 +18,6 @@ lightcone_nr=${SLURM_ARRAY_TASK_ID}
 basename=lightcone${lightcone_nr}
 
 sim_dir=/cosma8/data/dp004/flamingo/Runs/${sim}/
-#input_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/corrected_maps/
 input_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/combined_maps/
 output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/neutrino_corrected_maps/
 
