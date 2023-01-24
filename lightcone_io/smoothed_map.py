@@ -348,7 +348,10 @@ def make_sky_map(input_filename, ptype, property_names, particle_value_function,
 
     # Now each MPI rank has copies of all particles which affect its local
     # pixels. Process any particles which update single pixels.
-    single_pixel = part_hsml_recv*kernel.kernel_gamma < max_pixrad
+
+    #single_pixel = part_hsml_recv*kernel.kernel_gamma < max_pixrad # Correct method
+    single_pixel = part_hsml_recv < max_pixrad # To reproduce SWIFT bug (https://gitlab.cosma.dur.ac.uk/swift/swiftsim/-/merge_requests/1559)
+
     nr_single_pixel = comm.allreduce(np.sum(single_pixel))
     local_pix_index = hp.pixelfunc.vec2pix(nside, 
                                            part_pos_recv_view[single_pixel, 0],
