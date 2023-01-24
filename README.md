@@ -255,6 +255,11 @@ scripts/FLAMINGO/combine_L1000N1800.sh
 scripts/FLAMINGO/correct_L1000N1800.sh
 scripts/FLAMINGO/downsample_L1000N1800.sh
 ```
+  * Create a directory for the log files (the scripts will silently fail if this doesn't exist):
+```
+cd scripts/FLAMINGO
+mkdir -p logs/L1000N1800
+```
   * Submit the script to combine the maps into one file per shell. The job name (sbatch -J) specifies which simulation to process. The job array index (sbatch --array=...) is which lightcone(s) to do. E.g. for L1000N1800/HYDRO_FIDUCIAL:
 ```
 sbatch -J HYDRO_FIDUCIAL --array=0-1 ./combine_L1000N1800.sh
