@@ -213,20 +213,22 @@ def read_lightcone_particles(all_particle_files, ptype):
     
     # Read the positions for this particle type
     pos = []
+    particles_per_file = []
     for filename in local_particle_files:
         with h5py.File(filename, "r") as infile:
             pos.append(infile[ptype]["Coordinates"][...])
+            particles_per_file.append(pos[-1].shape[0])
     if len(pos) > 0:
         pos = np.concatenate(pos)
     else:
         pos = None
     pos = mpi_util.replace_none_with_zero_size(pos, comm=comm)
-
+    particles_per_file = np.concatenate(comm.allgather(particles_per_file))
     nr_particles_local = pos.shape[0]
     nr_particles_total = comm.allreduce(nr_particles_local)
     message(f"Read in {nr_particles_total} particles")
 
-    return pos
+    return files_per_rank, first_file_rank, particles_per_file, pos
 
 
 def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
@@ -358,11 +360,13 @@ if __name__ == "__main__":
     type_z_range, all_particle_files = read_lightcone_index(args)
 
     # Loop over types to do
+    create_files = True
     for ptype in ("BH",):
         
         # Read in positions of lightcone particles of this type
         message(f"Reading particles of type {ptype}")
-        part_pos = read_lightcone_particles(all_particle_files, ptype)
+        (files_per_rank, first_file_rank,
+         particles_per_file, part_pos) = read_lightcone_particles(all_particle_files, ptype)
 
         # Assign group indexes to the particles
         message("Assigning group indexes")
@@ -372,10 +376,32 @@ if __name__ == "__main__":
         part_halo_id = compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos)
 
         # Write out the particle halo IDs
+        # Loop over files to write on this rank
+        for file_nr in range(first_file_rank[comm_rank],
+                             first_file_rank[comm_rank]+files_per_rank[comm_rank]):
+            
+            # Find range of particles to write to this file
+            offset = np.sum(particles_per_file[first_file_rank[comm_rank]:file_nr], dtype=int)
+            length = particles_per_file[file_nr]
+            print(f"Rank {comm_rank} is writing {length} particles to file {file_nr}")
 
+            # Open or create the output file
+            filename = f"{output_dir}/particle_halo_ids.{file_nr}.hdf5"
+            mode = "w" if create_file else "r+"
+            outfile = h5py.File(outfile, mode)
+
+            # Write out the particle halo ID data
+            group = outfile.create_group(ptype)
+            dataset = group.create_dataset("HaloID", data=part_halo_id[offset:offset+length],
+                                           compression="gzip", compression_opts=6)
+            outfile.close()
+        
         # Tidy up before reading next particle type
         del part_pos
         del part_halo_id
 
+        # Only need to create new output files for the first type
+        create_files = False
+        
     comm.barrier()
     message("Done.")
