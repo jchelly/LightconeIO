@@ -78,7 +78,7 @@ def read_lightcone_halo_positions_and_radii(args, radius_name):
     sort_key = rng.integers(comm_size, size=nr_local_halos, dtype=np.int32)
     order = psort.parallel_sort(sort_key, comm=comm, return_index=True)
     for name in sorted(halo_lightcone_data):
-        halo_lightcone_data[name] = psort.fetch_elements(halo_lightcone_data[name], order, comm=comm)
+        psort.fetch_elements(halo_lightcone_data[name], order, result=halo_lightcone_data[name], comm=comm)
 
     # Sort locally by snapnum
     message("Sorting local lightcone halos by snapshot")
@@ -144,7 +144,7 @@ def read_lightcone_halo_positions_and_radii(args, radius_name):
 
         # Store the SO radius for each lightcone halo
         message("Storing SO radii for lightcone halos at this snapshot")
-        halo_lightcone_data[radius_name][i1:i2] = psort.fetch_elements(soap_data[radius_name], ptr, comm=comm)
+        psort.fetch_elements(soap_data[radius_name], ptr, result=halo_lightcone_data[radius_name][i1:i2], comm=comm)
 
     # All halos should have been assigned a radius
     assert np.all(halo_lightcone_data[radius_name] >= 0)
@@ -229,64 +229,99 @@ def read_lightcone_particles(all_particle_files, ptype):
     return pos
 
 
-def pass_array(comm, arr):
-    """
-    Send arr to the next rank and return array received from previous
-    """
-
-    # Find ranks to communicate with
-    next_rank = (comm_rank + 1) % comm_size
-    prev_rank = (comm_rank - 1) % comm_size
-
-    # Find type and shape of array to receive
-    dtype = arr.dtype
-    shape = list(arr.shape)
-    nr_recv = comm.sendrecv(shape[0], next_rank, source=prev_rank)
-    shape[0] = nr_recv
-
-    # Transfer the data
-    arr_recv = np.ndarray(shape, dtype=dtype)
-    comm.Sendrecv(arr, next_rank, recvbuf=arr_recv, source=prev_rank)
-
-    return arr_recv
-
-
 def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     """
     Tag particles which are within the SO radius of a halo
     """
 
-    # Possible optimization:
-    # Partition particles by x coord and send each rank just a slice of the halo catalogue
+    # Assign indexes to the particles so we can restore their ordering later
+    nr_particles = part_pos.shape[0]
+    offset = comm.scan(nr_particles) - nr_particles
+    part_index = np.arange(nr_particles, dtype=np.int64) + offset
 
-    # Allocate output array
+    # Will split the halos and particles by x coordinate, with a roughly
+    # constant number of particles per rank. First, sort the particles by x.
+    message("Sorting particles by x coordinate")
+    sort_key = part_pos[:,0].copy()
+    order = psort.parallel_sort(sort_key, return_index=True, comm=comm)
+    del sort_key
+    psort.fetch_elements(part_pos, order, result=part_pos, comm=comm)
+    psort.fetch_elements(part_index, order, result=part_index, comm=comm)
+    del order
+
+    # Find the maximum halo radius
+    local_max_radius = np.amax(halo_radius)
+    max_radius = comm.allreduce(local_max_radius, op=MPI.MAX)
+
+    # Determine the range of x coordinates of halos which could overlap particles on this rank
+    local_x_min = np.amin(part_pos[:,0]) - max_radius
+    x_min_on_rank = np.asarray(comm.allgather(local_x_min), dtype=part_pos.dtype)
+    local_x_max = np.amax(part_pos[:,0]) + max_radius
+    x_max_on_rank = np.asarray(comm.allgather(local_x_min), dtype=part_pos.dtype)
+
+    # Sort local halos by x coordinate
+    message("Sorting local lightcone halos by x coordinate")
+    order = np.argsort(halo_pos[:,0])
+    halo_pos[...] = halo_pos[order,:]
+    halo_id[...] = halo_id[order]
+
+    # Determine what range of halos needs to be sent to each MPI rank
+    first_halo_for_rank = np.searchsorted(halo_pos[:,0], x_min_on_rank, side="left")
+    last_halo_for_rank = np.searchsorted(halo_pos[:,0], x_max_on_rank, side="right")
+    nr_halos_for_rank = last_halo_for_rank - first_halo_for_rank
+
+    # Compute lengths and offsets for alltoallv halo exchange
+    send_offset = first_halo_for_rank
+    send_count = nr_halos_for_rank
+    recv_count = comm.alltoall(send_count)
+    recv_offset = np.cumsum(recv_count) - recv_count
+
+    # Exchange halo IDs
+    message("Exchanging halo IDs")
+    halo_id_recv = np.empty_like(halo_id)
+    my_alltoallv(halo_id, send_count, send_offset,
+                 halo_id_recv, recv_count, recv_offset,
+                 comm=comm)
+    halo_id = halo_id_recv
+    del halo_id_recv
+
+    # Exchange halo positions
+    message("Exchanging halo positions")
+    halo_pos_recv = np.empty_like(halo_pos)
+    my_alltoallv(halo_pos.flatten(), send_count*3, send_offset*3,
+                 halo_pos_recv.flatten(), recv_count*3, recv_offset*3,
+                 comm=comm)
+    halo_pos = halo_pos_recv
+    del halo_pos_recv
+
+    # Allocate output array for the particle halo IDs
     nr_parts = part_pos.shape[0]
     part_halo_id = -np.ones(nr_parts, dtype=halo_id.dtype)
 
-    # Find number of halos per rank
-    halo_per_rank = np.asarray(comm.allgather(halo_pos.shape[0]), dtype=int)
-
     # Build a kdtree with the local particles
+    message("Building kdtree")
     tree = scipy.spatial.KDTree(part_pos)
-    
-    # Loop over other ranks to communicate with
-    for comm_nr in range(comm_size):
-
-        message(f"Communication step {comm_nr} of {comm_size}")
-    
-        # Loop over local halos
-        for i in range(len(halo_id)):
+        
+    # Loop over local halos
+    message("Assigning halo IDs to particles")
+    for i in range(len(halo_id)):
             
-            # Identify particles within this halo's radius
-            idx = tree.query_ball_point(halo_pos[i,:], halo_radius[i])
+        # Identify particles within this halo's radius
+        idx = tree.query_ball_point(halo_pos[i,:], halo_radius[i])
 
-            # Tag particles within the radius with the halo ID
-            part_halo_id[idx] = halo_id[i]
+        # Tag particles within the radius with the halo ID
+        part_halo_id[idx] = halo_id[i]
 
-        # Pass local halo catalogue on to the next rank
-        halo_id = pass_array(comm, halo_id)
-        halo_pos = pass_array(comm, halo_pos)
-        halo_radius = pass_array(comm, halo_radius)
+    # Tidy up
+    del halo_id
+    del halo_pos
+    del part_pos
+
+    # Restore original particle ordering and return halo IDs
+    message("Restoring particle order")
+    order = psort.parallel_sort(part_index, return_index=True, comm=comm)
+    del part_index
+    psort.fetch_elements(part_halo_id, order, result=part_halo_id, comm=comm)
 
     return part_halo_id
 
@@ -335,6 +370,8 @@ if __name__ == "__main__":
         halo_pos = halo_lightcone_data["Pos_minpot"]
         halo_radius = halo_lightcone_data[radius_name]
         part_halo_id = compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos)
+
+        # Write out the particle halo IDs
 
         # Tidy up before reading next particle type
         del part_pos
