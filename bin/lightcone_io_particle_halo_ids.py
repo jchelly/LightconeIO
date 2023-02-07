@@ -264,9 +264,10 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     # Sort local halos by x coordinate
     message("Sorting local lightcone halos by x coordinate")
     order = np.argsort(halo_pos[:,0])
-    halo_pos[...] = halo_pos[order,:]
-    halo_id[...] = halo_id[order]
-
+    halo_pos = halo_pos[order,:]
+    halo_id = halo_id[order]
+    halo_radius = halo_radius[order]
+    
     # Determine what range of halos needs to be sent to each MPI rank
     first_halo_for_rank = np.searchsorted(halo_pos[:,0], x_min_on_rank, side="left")
     last_halo_for_rank = np.searchsorted(halo_pos[:,0], x_max_on_rank, side="right")
@@ -287,6 +288,15 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     halo_id = halo_id_recv
     del halo_id_recv
 
+    # Exchange halo radii
+    message("Exchanging halo radii")
+    halo_radius_recv = np.empty_like(halo_radius)
+    my_alltoallv(halo_radius, send_count, send_offset,
+                 halo_radius_recv, recv_count, recv_offset,
+                 comm=comm)
+    halo_radius = halo_radius_recv
+    del halo_radius_recv
+    
     # Exchange halo positions
     message("Exchanging halo positions")
     halo_pos_recv = np.empty_like(halo_pos)
@@ -296,6 +306,14 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     halo_pos = halo_pos_recv
     del halo_pos_recv
 
+    # Sort halos by radius:
+    # This ensures that the most massive halos are dealt with last,
+    # so particles are assigned to the most massive overlapping halo.
+    order = np.argsort(halo_radius)
+    halo_pos = halo_pos[order,:]
+    halo_id = halo_id[order]
+    halo_radius = halo_radius[order]
+    
     # Allocate output array for the particle halo IDs
     nr_parts = part_pos.shape[0]
     part_halo_id = -np.ones(nr_parts, dtype=halo_id.dtype)
