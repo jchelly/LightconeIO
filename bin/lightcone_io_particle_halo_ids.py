@@ -88,7 +88,8 @@ def read_lightcone_halo_positions_and_radii(args, radius_name):
 
     # Find range of local halos at each snapshot
     message("Identifying halos at each snapshot")
-    unique_snap, snap_offset, snap_count = np.unique(halo_lightcone_data["SnapNum"], return_index=True, return_counts=True)
+    unique_snap, snap_offset, snap_count = np.unique(halo_lightcone_data["SnapNum"],
+                                                     return_index=True, return_counts=True)
 
     # Find full range of snapshots across all MPI ranks
     min_snap = comm.allreduce(np.amin(unique_snap), op=MPI.MIN)
@@ -109,7 +110,7 @@ def read_lightcone_halo_positions_and_radii(args, radius_name):
 
     # Allocate storage for radius of each lightcone halo
     nr_halos = len(halo_lightcone_data["ID"])
-    halo_lightcone_data[radius_name] = -np.ones(nr_halos, dtype=float)
+    halo_lightcone_data[radius_name] = None # Don't know dtype for radius array yet
 
     # Loop over snapshots
     for snapnum in unique_snap_all:
@@ -142,9 +143,15 @@ def read_lightcone_halo_positions_and_radii(args, radius_name):
         ptr = psort.parallel_match(halo_lightcone_data["ID"][i1:i2], soap_data["VR/ID"], comm=comm)
         assert np.all(ptr>=0) # All halos in the lightcone should be found in SOAP
 
+        # Allocate storage for radii now that we know what dtype SOAP uses
+        if halo_lightcone_data[radius_name] is None:
+            radius_dtype = soap_data[radius_name].dtype
+            halo_lightcone_data[radius_name] = -np.ones(nr_halos, dtype=radius_dtype)
+
         # Store the SO radius for each lightcone halo
         message("Storing SO radii for lightcone halos at this snapshot")
-        psort.fetch_elements(soap_data[radius_name], ptr, result=halo_lightcone_data[radius_name][i1:i2], comm=comm)
+        psort.fetch_elements(soap_data[radius_name], ptr,
+                             result=halo_lightcone_data[radius_name][i1:i2], comm=comm)
 
     # All halos should have been assigned a radius
     assert np.all(halo_lightcone_data[radius_name] >= 0)
@@ -195,42 +202,6 @@ def read_lightcone_index(args):
     return type_z_range, all_particle_files
 
 
-def read_lightcone_particles(all_particle_files, ptype):
-    """
-    Read in the lightcone particle positions for one particle type
-    """
-
-    nr_files = len(all_particle_files)
-    message(f"Reading positions for type {ptype} from {nr_files} files")
-
-    # Assign files to MPI ranks and find files this rank will read
-    files_per_rank = np.zeros(comm_size, dtype=int)
-    files_per_rank[:] = len(all_particle_files) // comm_size
-    files_per_rank[:len(all_particle_files) % comm_size] += 1
-    assert np.sum(files_per_rank) == len(all_particle_files)
-    first_file_rank = np.cumsum(files_per_rank) - files_per_rank
-    local_particle_files = all_particle_files[first_file_rank[comm_rank]:first_file_rank[comm_rank]+files_per_rank[comm_rank]]
-    
-    # Read the positions for this particle type
-    pos = []
-    particles_per_file = []
-    for filename in local_particle_files:
-        with h5py.File(filename, "r") as infile:
-            pos.append(infile[ptype]["Coordinates"][...])
-            particles_per_file.append(pos[-1].shape[0])
-    if len(pos) > 0:
-        pos = np.concatenate(pos)
-    else:
-        pos = None
-    pos = mpi_util.replace_none_with_zero_size(pos, comm=comm)
-    particles_per_file = np.concatenate(comm.allgather(particles_per_file))
-    nr_particles_local = pos.shape[0]
-    nr_particles_total = comm.allreduce(nr_particles_local)
-    message(f"Read in {nr_particles_total} particles")
-
-    return files_per_rank, first_file_rank, particles_per_file, pos
-
-
 def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     """
     Tag particles which are within the SO radius of a halo
@@ -240,6 +211,11 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     nr_particles = part_pos.shape[0]
     offset = comm.scan(nr_particles) - nr_particles
     part_index = np.arange(nr_particles, dtype=np.int64) + offset
+
+    nr_halos = halo_pos.shape[0]
+    nr_halos_total = comm.allreduce(nr_halos)
+    nr_particles_total = comm.allreduce(nr_particles)
+    message(f"Have {nr_particles_total} particles and {nr_halos_total} halos")
 
     # Will split the halos and particles by x coordinate, with a roughly
     # constant number of particles per rank. First, sort the particles by x.
@@ -259,7 +235,7 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     local_x_min = np.amin(part_pos[:,0]) - max_radius
     x_min_on_rank = np.asarray(comm.allgather(local_x_min), dtype=part_pos.dtype)
     local_x_max = np.amax(part_pos[:,0]) + max_radius
-    x_max_on_rank = np.asarray(comm.allgather(local_x_min), dtype=part_pos.dtype)
+    x_max_on_rank = np.asarray(comm.allgather(local_x_max), dtype=part_pos.dtype)
 
     # Sort local halos by x coordinate
     message("Sorting local lightcone halos by x coordinate")
@@ -272,38 +248,43 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     first_halo_for_rank = np.searchsorted(halo_pos[:,0], x_min_on_rank, side="left")
     last_halo_for_rank = np.searchsorted(halo_pos[:,0], x_max_on_rank, side="right")
     nr_halos_for_rank = last_halo_for_rank - first_halo_for_rank
+    message(f"Minimum halos on rank after exchange = {np.amin(nr_halos_for_rank)}")
+    message(f"Maximum halos on rank after exchange = {np.amax(nr_halos_for_rank)}")
 
     # Compute lengths and offsets for alltoallv halo exchange
     send_offset = first_halo_for_rank
     send_count = nr_halos_for_rank
-    recv_count = comm.alltoall(send_count)
+    recv_count = np.asarray(comm.alltoall(send_count), dtype=send_count.dtype)
     recv_offset = np.cumsum(recv_count) - recv_count
 
     # Exchange halo IDs
     message("Exchanging halo IDs")
-    halo_id_recv = np.empty_like(halo_id)
-    my_alltoallv(halo_id, send_count, send_offset,
-                 halo_id_recv, recv_count, recv_offset,
-                 comm=comm)
+    halo_id_recv = np.empty_like(halo_id, shape=np.sum(recv_count))
+    psort.my_alltoallv(halo_id, send_count, send_offset,
+                       halo_id_recv, recv_count, recv_offset,
+                       comm=comm)
     halo_id = halo_id_recv
     del halo_id_recv
 
     # Exchange halo radii
     message("Exchanging halo radii")
-    halo_radius_recv = np.empty_like(halo_radius)
-    my_alltoallv(halo_radius, send_count, send_offset,
-                 halo_radius_recv, recv_count, recv_offset,
-                 comm=comm)
+    halo_radius_recv = np.empty_like(halo_radius, shape=np.sum(recv_count))
+    psort.my_alltoallv(halo_radius, send_count, send_offset,
+                       halo_radius_recv, recv_count, recv_offset,
+                       comm=comm)
     halo_radius = halo_radius_recv
     del halo_radius_recv
     
-    # Exchange halo positions
+    # Exchange halo positions:
+    # These are vectors so flatten, exchange then restore shape
     message("Exchanging halo positions")
-    halo_pos_recv = np.empty_like(halo_pos)
-    my_alltoallv(halo_pos.flatten(), send_count*3, send_offset*3,
-                 halo_pos_recv.flatten(), recv_count*3, recv_offset*3,
-                 comm=comm)
+    halo_pos.shape = (-1,)
+    halo_pos_recv = np.empty_like(halo_pos, shape=3*np.sum(recv_count))
+    psort.my_alltoallv(halo_pos, send_count*3, send_offset*3,
+                       halo_pos_recv, recv_count*3, recv_offset*3,
+                       comm=comm)
     halo_pos = halo_pos_recv
+    halo_pos.shape = (-1, 3)
     del halo_pos_recv
 
     # Sort halos by radius:
@@ -316,13 +297,14 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     
     # Allocate output array for the particle halo IDs
     nr_parts = part_pos.shape[0]
-    part_halo_id = -np.ones(nr_parts, dtype=halo_id.dtype)
+    part_halo_id = -np.ones(nr_parts, dtype=np.int64)
 
     # Build a kdtree with the local particles
     message("Building kdtree")
     tree = scipy.spatial.KDTree(part_pos)
-        
+    
     # Loop over local halos
+    nr_assigned = 0
     message("Assigning halo IDs to particles")
     for i in range(len(halo_id)):
             
@@ -331,6 +313,12 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
 
         # Tag particles within the radius with the halo ID
         part_halo_id[idx] = halo_id[i]
+        nr_assigned += len(idx)
+
+    nr_assigned_tot = comm.allreduce(nr_assigned)
+    fraction_assigned = nr_assigned_tot / nr_particles
+    message(f"Total particles assigned to halos = {nr_assigned_tot}")
+    message(f"Fraction assigned = {fraction_assigned} (inc. duplicates due to halo overlap)")
 
     # Tidy up
     del halo_id
@@ -377,14 +365,28 @@ if __name__ == "__main__":
     # Locate the particle data
     type_z_range, all_particle_files = read_lightcone_index(args)
 
+    # Generate filenames for the output:
+    # These are the input filenames with the directory replaced with argument output_dir.
+    output_filenames = []
+    for input_filename in all_particle_files:
+        dirname, filename = os.path.split(input_filename)
+        output_filenames.append(os.path.join(args.output_dir, filename))
+
+    # Open the input particle file set
+    mf = phdf5.MultiFile(all_particle_files, comm=comm)
+
     # Loop over types to do
     create_files = True
     for ptype in ("BH",):
         
+        message(f"Processing particle type {ptype}")
+
         # Read in positions of lightcone particles of this type
-        message(f"Reading particles of type {ptype}")
-        (files_per_rank, first_file_rank,
-         particles_per_file, part_pos) = read_lightcone_particles(all_particle_files, ptype)
+        message(f"Reading particles")
+        part_pos = mf.read(("Coordinates",), group=ptype)["Coordinates"]
+
+        # Record number of particles read from each file
+        elements_per_file = mf.get_elements_per_file("Coordinates", group=ptype)
 
         # Assign group indexes to the particles
         message("Assigning group indexes")
@@ -393,27 +395,11 @@ if __name__ == "__main__":
         halo_radius = halo_lightcone_data[radius_name]
         part_halo_id = compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos)
 
-        # Write out the particle halo IDs
-        # Loop over files to write on this rank
-        for file_nr in range(first_file_rank[comm_rank],
-                             first_file_rank[comm_rank]+files_per_rank[comm_rank]):
-            
-            # Find range of particles to write to this file
-            offset = np.sum(particles_per_file[first_file_rank[comm_rank]:file_nr], dtype=int)
-            length = particles_per_file[file_nr]
-            print(f"Rank {comm_rank} is writing {length} particles to file {file_nr}")
+        # Write the output, appending to file if this is not the first particle type
+        message(f"Writing output to {args.output_dir}")
+        mode = "w" if create_files else "r+"
+        mf.write({"HaloID" : part_halo_id}, elements_per_file, output_filenames, mode, group=ptype)
 
-            # Open or create the output file
-            filename = f"{output_dir}/particle_halo_ids.{file_nr}.hdf5"
-            mode = "w" if create_file else "r+"
-            outfile = h5py.File(outfile, mode)
-
-            # Write out the particle halo ID data
-            group = outfile.create_group(ptype)
-            dataset = group.create_dataset("HaloID", data=part_halo_id[offset:offset+length],
-                                           compression="gzip", compression_opts=6)
-            outfile.close()
-        
         # Tidy up before reading next particle type
         del part_pos
         del part_halo_id
@@ -423,3 +409,6 @@ if __name__ == "__main__":
         
     comm.barrier()
     message("Done.")
+
+    MPI.Finalize()
+    sys.exit(0)
