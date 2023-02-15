@@ -51,13 +51,15 @@ class IndexedLightconeParticleType:
     """
     Class to read a single particle type from a lightcone
     """
-    def __init__(self, type_name, metadata, index, units, filenames):
+    def __init__(self, type_name, metadata, index, units, filenames,
+                 extra_filenames=None):
 
         self.type_name = type_name
         self.metadata  = metadata
         self.index     = index
         self.units     = units
         self.filenames = filenames
+        self.extra_filenames = extra_filenames
         self.comm      = None
         self.comm_rank = 0
         self.comm_size = 1
@@ -77,10 +79,10 @@ class IndexedLightconeParticleType:
             np.searchsorted(first_particle_in_cell, last_particle_in_file, side="right") - 1)
 
         # Find which quantities we have for this type
+        properties = {}
         for filename in self.filenames:
             with h5py.File(filename, "r") as infile:
                 if type_name in infile:
-                    properties = {}
                     for prop_name, dataset in infile[type_name].items():
                         if "a-scale exponent" in dataset.attrs:
                             shape = dataset.shape[1:]
@@ -93,6 +95,26 @@ class IndexedLightconeParticleType:
                             properties[prop_name].attrs = dict(dataset.attrs)
                     break
         self.properties = properties
+
+        # Also check any extra files specified for additional quantities
+        extra_properties = {}
+        if extra_filenames is not None:
+            assert len(filenames) == len(extra_filenames)
+            for filename in self.extra_filenames:
+                with h5py.File(filename, "r") as infile:
+                    if type_name in infile:
+                        for prop_name, dataset in infile[type_name].items():
+                            if "a-scale exponent" in dataset.attrs:
+                                shape = dataset.shape[1:]
+                                dtype = dataset.dtype
+                                if unyt is not None:
+                                    units = units_from_attributes(dataset)
+                                    extra_properties[prop_name] = unyt.unyt_array(np.ndarray((0,)+shape, dtype=dataset.dtype), units)
+                                else:
+                                    extra_properties[prop_name] = np.ndarray((0,)+shape, dtype=dtype)
+                                extra_properties[prop_name].attrs = dict(dataset.attrs)
+                        break
+        self.extra_properties = extra_properties
 
     def set_mpi_mode(self, comm):
         self.comm = comm
@@ -152,6 +174,17 @@ class IndexedLightconeParticleType:
         from the lightcone particle files.
         """
 
+        # Check property names all exist
+        for name in property_names:
+            if name not in self.properties and name not in self.extra_properties:
+                raise KeyError(f"Can't find property: {name}")
+
+        # Check if we need to read from the extra data files
+        read_extra = False
+        for name in property_names:
+            if name not in self.properties and name in self.extra_properties:
+                read_extra = True
+
         # Cell indexes should be in ascending order
         assert np.all(cells_to_read[1:] > cells_to_read[:-1])
 
@@ -183,6 +216,12 @@ class IndexedLightconeParticleType:
         # Loop over files in the lightcone
         for current_file, filename in enumerate(self.filenames):
             
+            # Locate file with extra datasets, if any
+            if self.extra_filename is not None:
+                extra_filename = self.extra_filename[current_file]
+            else:
+                extra_filename = None
+
             # Skip files with no particles
             if num_particles_in_file[current_file] == 0:
                 continue
@@ -212,12 +251,17 @@ class IndexedLightconeParticleType:
 
             # Open the file
             infile = h5py.File(filename, "r")
+            if read_extra:
+                extra_infile = h5py.File(extra_filename, "r")
 
             # Loop over quantities to read
             for name in property_names:
 
                 # Find the dataset for this property
-                dset = infile[self.type_name][name]
+                if name in self.properties:
+                    dset = infile[self.type_name][name]
+                else:
+                    dset = extra_infile[self.type_name][name]
 
                 # Create output array, if we didn't already
                 if data[name] is None:
@@ -238,6 +282,11 @@ class IndexedLightconeParticleType:
                     if num > 0:
                         data[name][offset[name]:offset[name]+num] = dset[i1:i2,...]
                         offset[name] += num
+
+            # Close current file(s)
+            infile.close()
+            if read_extra:
+                extra_infile.close()
 
         for name in property_names:
             assert offset[name] == nr_particles
@@ -416,7 +465,7 @@ class IndexedLightcone(collections.abc.Mapping):
     """
     Class used to read particle lightcones
     """
-    def __init__(self, fname, comm=None):
+    def __init__(self, fname, comm=None, extra_data_dir=None):
 
         if comm is not None:
             comm_rank = comm.Get_rank()
@@ -455,13 +504,22 @@ class IndexedLightcone(collections.abc.Mapping):
                 for i in range(metadata["nr_mpi_ranks"]):
                     filenames.append("%s.%d.hdf5" % (basename, i))
 
+                # Find names of extra files
+                if extra_data_dir is not None:
+                    extra_filenames = []
+                    for i in range(metadata["nr_mpi_ranks"]):
+                        extra_filenames.append("%s.%d.hdf5" % (extra_data_dir, i))
+                else:
+                    extra_filenames = None
+
                 # Determine particle types present
                 self.particle_types = {}
                 for type_name in infile["Cells"]:
                     index = {}
                     for name in infile["Cells"][type_name]:
                         index[name] = infile["Cells"][type_name][name][()]
-                    self.particle_types[type_name] = IndexedLightconeParticleType(type_name, metadata, index, units, filenames)
+                    self.particle_types[type_name] = IndexedLightconeParticleType(type_name, metadata, index, units, filenames,
+                                                                                  extra_filenames)
 
         else:
             self.particle_types = None
