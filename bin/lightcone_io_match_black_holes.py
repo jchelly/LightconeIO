@@ -33,9 +33,6 @@ def message(m):
 
 def match_black_holes(args):
 
-    if comm_rank > 0:
-        sys.stderr = open('/dev/null', 'w')
-
     message(f"Starting on {comm_size} MPI ranks")
 
     # Open the lightcone particle output in MPI mode
@@ -351,6 +348,7 @@ def match_black_holes(args):
         halos_so_far_all = comm.allreduce(halos_so_far)
 
         # Add the completeness information etc
+        comm.barrier()
         if comm_rank == 0:
             outfile = h5py.File(output_filename, "r+")
             grp = outfile.create_group("Completeness")
@@ -375,6 +373,7 @@ def match_black_holes(args):
         # Tidy up particle arrays before we read the next slice
         del particle_data
 
+    comm.barrier()
     message("All redshift ranges done.")
 
 
