@@ -377,7 +377,7 @@ if __name__ == "__main__":
 
     # Loop over types to do
     create_files = True
-    for ptype in ("BH",):
+    for ptype in type_z_range:
         
         message(f"Processing particle type {ptype}")
 
