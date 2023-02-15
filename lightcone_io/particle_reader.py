@@ -217,8 +217,8 @@ class IndexedLightconeParticleType:
         for current_file, filename in enumerate(self.filenames):
             
             # Locate file with extra datasets, if any
-            if self.extra_filename is not None:
-                extra_filename = self.extra_filename[current_file]
+            if self.extra_filenames is not None:
+                extra_filename = self.extra_filenames[current_file]
             else:
                 extra_filename = None
 
@@ -465,7 +465,7 @@ class IndexedLightcone(collections.abc.Mapping):
     """
     Class used to read particle lightcones
     """
-    def __init__(self, fname, comm=None, extra_data_dir=None):
+    def __init__(self, fname, comm=None, extra_filename=None):
 
         if comm is not None:
             comm_rank = comm.Get_rank()
@@ -483,6 +483,14 @@ class IndexedLightcone(collections.abc.Mapping):
                 basename = m.group(1)
             else:
                 raise IOError("Unable to extract base name from filename: %s" % fname)
+
+            # Repeat for extra data files, if any
+            if extra_filename is not None:
+                m = re.match(r"(.*)\.[0-9]+\.hdf5", extra_filename)
+                if m is not None:
+                    extra_basename = m.group(1)
+                else:
+                    raise IOError("Unable to extract base name from filename: %s" % fname)
 
             with h5py.File(fname, "r") as infile:
 
@@ -505,10 +513,10 @@ class IndexedLightcone(collections.abc.Mapping):
                     filenames.append("%s.%d.hdf5" % (basename, i))
 
                 # Find names of extra files
-                if extra_data_dir is not None:
+                if extra_filename is not None:
                     extra_filenames = []
                     for i in range(metadata["nr_mpi_ranks"]):
-                        extra_filenames.append("%s.%d.hdf5" % (extra_data_dir, i))
+                        extra_filenames.append("%s.%d.hdf5" % (extra_basename, i))
                 else:
                     extra_filenames = None
 
@@ -520,7 +528,6 @@ class IndexedLightcone(collections.abc.Mapping):
                         index[name] = infile["Cells"][type_name][name][()]
                     self.particle_types[type_name] = IndexedLightconeParticleType(type_name, metadata, index, units, filenames,
                                                                                   extra_filenames)
-
         else:
             self.particle_types = None
 
