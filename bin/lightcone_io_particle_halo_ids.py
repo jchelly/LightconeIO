@@ -316,7 +316,7 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
         nr_assigned += len(idx)
 
     nr_assigned_tot = comm.allreduce(nr_assigned)
-    fraction_assigned = nr_assigned_tot / nr_particles
+    fraction_assigned = nr_assigned_tot / nr_particles_total
     message(f"Total particles assigned to halos = {nr_assigned_tot}")
     message(f"Fraction assigned = {fraction_assigned} (inc. duplicates due to halo overlap)")
 
@@ -398,7 +398,19 @@ if __name__ == "__main__":
         # Write the output, appending to file if this is not the first particle type
         message(f"Writing output to {args.output_dir}")
         mode = "w" if create_files else "r+"
-        mf.write({"HaloID" : part_halo_id}, elements_per_file, output_filenames, mode, group=ptype)
+        dimensionless_attrs = {
+            "U_I exponent" : (0.0,),
+            "U_L exponent" : (0.0,),
+            "U_M exponent" : (0.0,),
+            "U_T exponent" : (0.0,),
+            "U_t exponent" : (0.0,),
+            "a-scale exponent" : (0.0,),
+            "h-scale exponent" : (0.0,),
+            "Conversion factor to CGS (not including cosmological corrections)" : (1.0,),
+            "Conversion factor to CGS (including cosmological corrections)" : (1.0,),
+        }
+        mf.write({"HaloID" : part_halo_id}, elements_per_file, output_filenames, mode,
+                 group=ptype, attrs={"HaloID" : dimensionless_attrs})
 
         # Tidy up before reading next particle type
         del part_pos
@@ -410,5 +422,3 @@ if __name__ == "__main__":
     comm.barrier()
     message("Done.")
 
-    MPI.Finalize()
-    sys.exit(0)
