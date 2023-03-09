@@ -53,18 +53,26 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
 
             # Read in the black hole particle IDs for this snapshot
             mf1 = phdf5.MultiFile(snapshot_format, file_nr_attr=("Header","NumFilesPerSnapshot"), comm=comm)
-            snap_bh_ids = mf1.read("PartType5/ParticleIDs")
+            data = mf1.read(("PartType5/ParticleIDs", "PartType5/Coordinates"))
+            snap_bh_ids = data["PartType5/ParticleIDs"]
+            snap_bh_pos = data["PartType5/Coordinates"]
 
             # Read in the black hole particle halo membership
             mf2 = phdf5.MultiFile(membership_format, file_idx=mf1.all_file_indexes, comm=comm)
-            data = mf2.read(("PartType5/GroupNr_bound", "PartType5/Rank_bound"))
-            snap_bh_grnr = data["PartType5/GroupNr_bound"]
+            data = mf2.read(("PartType5/GroupNr_bound", "PartType5/Rank_bound", "PartType5/GroupNr_all"))
+            snap_bh_grnr_bound = data["PartType5/GroupNr_bound"]
+            snap_bh_grnr = data["PartType5/GroupNr_all"]
             snap_bh_rank = data["PartType5/Rank_bound"]
+            # Assign a large binding energy rank to unbound group member particles:
+            # We'll use an arbitrary unbound BH if no bound BH is available.
+            unbound = (snap_bh_grnr_bound < 0) & (snap_bh_grnr >= 0)
+            snap_bh_rank[unbound] = np.amax(snap_bh_rank) + 1
+            del snap_bh_grnr_bound
             assert len(snap_bh_grnr) == len(snap_bh_ids)
             assert len(snap_bh_rank) == len(snap_bh_ids)
 
             # Add this snapshot to the cache
-            membership_cache[sn] = (snap_bh_ids, snap_bh_grnr, snap_bh_rank)
+            membership_cache[sn] = (snap_bh_ids, snap_bh_grnr, snap_bh_rank, snap_bh_pos)
             nr_bh_local = len(snap_bh_ids)
             nr_bh_tot = comm.allreduce(nr_bh_local)
             message(f"Read {nr_bh_tot} BHs for snapshot {sn}")
@@ -106,6 +114,7 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
     bh_priority += 2*(max_rank+1)*exists_at_next_snap             # Boost priority more if exists at snap_nr+1
     bh_id   = membership_cache[snap_nr][0]
     bh_grnr = membership_cache[snap_nr][1]
+    bh_pos = membership_cache[snap_nr][3]
     message("BH priorities assigned")
 
     # Discard BHs which are not in halos
@@ -113,6 +122,7 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
     bh_priority = bh_priority[keep]
     bh_id = bh_id[keep]
     bh_grnr = bh_grnr[keep]
+    bh_pos = bh_pos[keep,:]
 
     # Sort BH particles by halo and then by priority within a halo
     sort_key = bh_grnr * (np.amax(bh_priority)+1) + bh_priority
@@ -121,6 +131,7 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
     bh_priority = psort.fetch_elements(bh_priority, order, comm=comm)
     bh_id = psort.fetch_elements(bh_id, order, comm=comm)
     bh_grnr =  psort.fetch_elements(bh_grnr, order, comm=comm)
+    bh_pos = psort.fetch_elements(bh_pos, order, comm=comm)
     del order
     message("Sorted BH particles by priority")
 
@@ -155,6 +166,7 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
     # Discard particles which are not the highest priority in their halo
     bh_id = bh_id[keep]
     bh_grnr = bh_grnr[keep]
+    bh_pos = bh_pos[keep,:]
     del bh_priority
     message("Discarded low priority BH particles")
 
@@ -168,10 +180,12 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
     fraction_matched = nr_groups_matched / nr_groups_total
     message(f"Matched fraction {fraction_matched} of VR groups to BHs")
 
-    # Fetch the IDs of the matched black holes. Return NULL_BH_ID where there's no match.
+    # Fetch the IDs and positions of the matched black holes. Return ID=NULL_BH_ID where there's no match.
     tracer_bh_id = np.ndarray(len(subhalo_id), dtype=bh_id.dtype)
     tracer_bh_id[:] = NULL_BH_ID
     tracer_bh_id[ptr>=0] = psort.fetch_elements(bh_id, ptr[ptr>=0], comm=comm)
+    tracer_bh_pos = np.zeros((len(subhalo_id),3), dtype=bh_pos.dtype)
+    tracer_bh_pos[ptr>=0,:] = psort.fetch_elements(bh_pos, ptr[ptr>=0], comm=comm)
 
     # As a consistency check, fetch the group number of the matched particles:
     # Each matched particle should belong to the VR group it was matched to.
@@ -180,7 +194,7 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
     tracer_bh_grnr[ptr>=0] = psort.fetch_elements(bh_grnr, ptr[ptr>=0], comm=comm)
     assert np.all(tracer_bh_grnr[ptr>=0] == subhalo_id[ptr>=0]-1)
 
-    return tracer_bh_id
+    return tracer_bh_id, tracer_bh_pos
 
 
 def match_black_holes(args):
@@ -552,8 +566,10 @@ def test_choose_bh_tracers():
 
     message("Finding tracers")
     membership_cache = {}
-    tracer_id = choose_bh_tracer(subhalo_id, args.snap_nr, args.final_snap_nr, args.snapshot_format,
-                                 args.membership_format, membership_cache)
+    tracer_id, tracer_pos = choose_bh_tracer(subhalo_id, args.snap_nr, args.final_snap_nr, args.snapshot_format,
+                                             args.membership_format, membership_cache)
+
+    assert np.all((subhalo_id_mbp_bh==NULL_BH_ID)==(tracer_id==NULL_BH_ID))
 
     # Count how many halos changed their most bound BH ID due to this process
     nr_groups = comm.allreduce(len(subhalo_id))
