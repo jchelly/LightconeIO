@@ -52,17 +52,17 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
                 membership_cache.popitem(last=False)
 
             # Read in the black hole particle IDs for this snapshot
-            mf1 = phdf5.MultiFile(snapshot_format, file_nr_attr=("Header","NumFilesPerSnapshot"), comm=comm)
-            data = mf1.read(("PartType5/ParticleIDs", "PartType5/Coordinates"))
-            snap_bh_ids = data["PartType5/ParticleIDs"]
-            snap_bh_pos = data["PartType5/Coordinates"]
+            filenames = (snapshot_format % {"snap_nr" : sn}) + ".%(file_nr)d.hdf5"
+            mf1 = phdf5.MultiFile(filenames, file_nr_attr=("Header","NumFilesPerSnapshot"), comm=comm)
+            snap_bh_ids, snap_bh_pos = mf1.read(("PartType5/ParticleIDs", "PartType5/Coordinates"), unpack=True)
 
             # Read in the black hole particle halo membership
-            mf2 = phdf5.MultiFile(membership_format, file_idx=mf1.all_file_indexes, comm=comm)
-            data = mf2.read(("PartType5/GroupNr_bound", "PartType5/Rank_bound", "PartType5/GroupNr_all"))
-            snap_bh_grnr_bound = data["PartType5/GroupNr_bound"]
-            snap_bh_grnr = data["PartType5/GroupNr_all"]
-            snap_bh_rank = data["PartType5/Rank_bound"]
+            filenames = (membership_format % {"snap_nr" : sn}) + ".%(file_nr)d.hdf5"
+            mf2 = phdf5.MultiFile(filenames, file_idx=mf1.all_file_indexes, comm=comm)
+            (snap_bh_grnr_bound, snap_bh_grnr, snap_bh_rank) = mf2.read(("PartType5/GroupNr_bound",
+                                                                         "PartType5/GroupNr_all",
+                                                                         "PartType5/Rank_bound"), unpack=True)
+
             # Assign a large binding energy rank to unbound group member particles:
             # We'll use an arbitrary unbound BH if no bound BH is available.
             unbound = (snap_bh_grnr_bound < 0) & (snap_bh_grnr >= 0)
@@ -75,7 +75,7 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
             membership_cache[sn] = (snap_bh_ids, snap_bh_grnr, snap_bh_rank, snap_bh_pos)
             nr_bh_local = len(snap_bh_ids)
             nr_bh_tot = comm.allreduce(nr_bh_local)
-            message(f"Read {nr_bh_tot} BHs for snapshot {sn}")
+            message(f"    Read {nr_bh_tot} BHs for snapshot {sn}")
 
     # Get number of black holes at snapshot snap_nr
     nr_bh_local = len(membership_cache[snap_nr][0])
@@ -90,7 +90,7 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
     else:
         exists_at_next_snap = np.ones(nr_bh_local, dtype=bool)
     nr_existing_next = comm.allreduce(np.sum(exists_at_next_snap))
-    message(f"Number of BHs which exist at the next snapshot = {nr_existing_next}")
+    message(f"    Number of BHs which exist at the next snapshot = {nr_existing_next}")
 
     # Determine which black hole particles exist at the previous snapshot
     if snap_nr > 0:
@@ -101,7 +101,7 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
     else:
         exists_at_prev_snap = np.ones(nr_bh_local, dtype=bool)
     nr_existing_prev = comm.allreduce(np.sum(exists_at_prev_snap))
-    message(f"Number of BHs which exist at the previous snapshot = {nr_existing_prev}")
+    message(f"    Number of BHs which exist at the previous snapshot = {nr_existing_prev}")
 
     # Assign priorities to the BH particles. In descending order of importance:
     # 1. Should exist at the next timestep
@@ -115,7 +115,7 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
     bh_id   = membership_cache[snap_nr][0]
     bh_grnr = membership_cache[snap_nr][1]
     bh_pos = membership_cache[snap_nr][3]
-    message("BH priorities assigned")
+    message("    BH priorities assigned")
 
     # Discard BHs which are not in halos
     keep = bh_grnr >= 0
@@ -133,7 +133,7 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
     bh_grnr =  psort.fetch_elements(bh_grnr, order, comm=comm)
     bh_pos = psort.fetch_elements(bh_pos, order, comm=comm)
     del order
-    message("Sorted BH particles by priority")
+    message("    Sorted BH particles by priority")
 
     # Now we need to discard all but the last (i.e. highest priority) particle in each halo.
     # Discard any particle which is in the same halo as the next particle on the same rank.
@@ -168,7 +168,7 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
     bh_grnr = bh_grnr[keep]
     bh_pos = bh_pos[keep,:]
     del bh_priority
-    message("Discarded low priority BH particles")
+    message("    Discarded low priority BH particles")
 
     # Now that we only have the highest priority particle in each halo,
     # for each VR halo find the 0-1 BH particles which belong to that halo
@@ -178,7 +178,7 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
     nr_groups_matched = comm.allreduce(np.sum(ptr>=0))
     nr_groups_total = comm.allreduce(len(ptr))
     fraction_matched = nr_groups_matched / nr_groups_total
-    message(f"Matched fraction {fraction_matched} of VR groups to BHs")
+    message(f"    Matched fraction {fraction_matched:.2f} of VR groups to BHs")
 
     # Fetch the IDs and positions of the matched black holes. Return ID=NULL_BH_ID where there's no match.
     tracer_bh_id = np.ndarray(len(subhalo_id), dtype=bh_id.dtype)
@@ -305,6 +305,11 @@ def match_black_holes(args):
     no_bh = merger_tree["Subhalo/n_bh"]==0
     assert np.all(merger_tree["Subhalo/ID_mbp_bh"][no_bh] == NULL_BH_ID)
 
+    # Allocate storage for selected BH tracer particle info
+    merger_tree["Subhalo/ID_tracer_bh"] = np.empty_like(merger_tree["Subhalo/ID_mbp_bh"])
+    for axis in ("X","Y","Z"):
+        merger_tree[f"Subhalo/{axis}tracer_bh"] = np.empty_like(merger_tree[f"Subhalo/{axis}cmbp_bh"])
+
     # Loop over unique redshifts in the trees, excluding the last
     halos_so_far = 0
     membership_cache = collections.OrderedDict()
@@ -316,11 +321,16 @@ def match_black_holes(args):
         nr_halos_in_slice = i2-i1
         nr_halos_in_slice_all = comm.allreduce(nr_halos_in_slice)
 
-        # Choose the tracer particle to use for each object:
-        # This overrides the most bouhnd BH from velociraptor.
-        merger_tree["Subhalo/ID_mbp_bh"][i1:i2] = choose_bh_tracer(merger_tree["Subhalo/ID"][i1:i2],
-                                                                   snap_nr, final_snap, args.snapshot_format,
-                                                                   args.membership_format, membership_cache)
+        # Choose the tracer BH particle to use for each object.
+        # Returns ID and position of the selected BH particle.
+        tracer_id, tracer_pos = choose_bh_tracer(merger_tree["Subhalo/ID"][i1:i2],
+                                                 snap_nr, final_snap, args.snapshot_format,
+                                                 args.membership_format, membership_cache)
+
+        # Store selected tracer particle position and ID
+        merger_tree["Subhalo/ID_tracer_bh"][i1:i2] = tracer_id
+        for i, axis in enumerate("X","Y","Z"):
+            merger_tree[f"Subhalo/{axis}tracer_bh"][i1:i2] = tracer_pos[:,i]
 
         # Each snapshot populates a redshift range which reaches half way to adjacent snapshots
         # (range is truncated for the first and last snapshots)
@@ -336,7 +346,7 @@ def match_black_holes(args):
         message(f"  Using {nr_halos_in_slice_all} halos at z={redshifts[redshift_nr]:.3f} to populate range z={z1:.3f} to z={z2:.3f}")
 
         # Find halo most bound BH IDs
-        id_mbp_bh = merger_tree["Subhalo/ID_mbp_bh"][i1:i2]
+        id_mbp_bh = merger_tree["Subhalo/ID_tracer_bh"][i1:i2]
         have_bh   = merger_tree["Subhalo/n_bh"][i1:i2] > 0
         mass      = merger_tree["Subhalo/Mass_tot"][i1:i2] * 1.0e10
 
@@ -456,17 +466,17 @@ def match_black_holes(args):
         # Position of the matched BH particle in the lightcone particle output
         bh_pos_in_lightcone = particle_data["Coordinates"][matched,...].ndarray_view()
 
-        # Position of the halo's most bound black hole, from VR
-        bh_pos_in_snapshot  = np.column_stack((halo_slice["Subhalo/Xcmbp_bh"],
-                                               halo_slice["Subhalo/Ycmbp_bh"],
-                                               halo_slice["Subhalo/Zcmbp_bh"])) * halo_pos_conversion
+        # Position of the selected tracer BH, taken from the snapshot
+        bh_pos_in_snapshot  = np.column_stack((halo_slice["Subhalo/Xtracer_bh"],
+                                               halo_slice["Subhalo/Ytracer_bh"],
+                                               halo_slice["Subhalo/Ztracer_bh"]))
         
-        # Position of the halo's potential minimum, from VR
+        # Position of the halo's potential minimum, from VR so unit conversion needed
         halo_pos_in_snapshot = np.column_stack((halo_slice["Subhalo/Xcminpot"],
                                                 halo_slice["Subhalo/Ycminpot"],
                                                 halo_slice["Subhalo/Zcminpot"])) * halo_pos_conversion
         
-        # Vector from the most bound BH to the potential minimum - may need box wrapping
+        # Vector from the tracer BH to the potential minimum - may need box wrapping
         bh_to_minpot_vector = halo_pos_in_snapshot - bh_pos_in_snapshot
         bh_to_minpot_vector = ((bh_to_minpot_vector+0.5*boxsize) % boxsize) - 0.5*boxsize
 
@@ -480,14 +490,14 @@ def match_black_holes(args):
             message(f"  Maximum minpot/bh offset = {max_offset} (SWIFT length units, comoving)")
 
         # Overwrite the halo position in the output catalogue
-        halo_slice["Subhalo/Xcminpot"] = halo_pos_in_lightcone[:,0]
-        halo_slice["Subhalo/Ycminpot"] = halo_pos_in_lightcone[:,1]
-        halo_slice["Subhalo/Zcminpot"] = halo_pos_in_lightcone[:,2]
-        halo_slice["Subhalo/Xcmbp_bh"] = bh_pos_in_lightcone[:,0]
-        halo_slice["Subhalo/Ycmbp_bh"] = bh_pos_in_lightcone[:,1]
-        halo_slice["Subhalo/Zcmbp_bh"] = bh_pos_in_lightcone[:,2]
+        halo_slice["Subhalo/LightconeXcminpot"] = halo_pos_in_lightcone[:,0]
+        halo_slice["Subhalo/LightconeYcminpot"] = halo_pos_in_lightcone[:,1]
+        halo_slice["Subhalo/LightconeZcminpot"] = halo_pos_in_lightcone[:,2]
+        halo_slice["Subhalo/LightconeXtracer_bh"] = bh_pos_in_lightcone[:,0]
+        halo_slice["Subhalo/LightconeYtracer_bh"] = bh_pos_in_lightcone[:,1]
+        halo_slice["Subhalo/LightconeZtracer_bh"] = bh_pos_in_lightcone[:,2]
         # Set the redshift of each halo to the redshift of lightcone crossing
-        halo_slice["Subhalo/Redshift"] = 1.0/particle_data["ExpansionFactors"][matched]-1.0
+        halo_slice["Subhalo/LightconeRedshift"] = 1.0/particle_data["ExpansionFactors"][matched]-1.0
         message(f"  Computed potential minimum position in lightcone")
 
         # Function to add attributes to a dataset
@@ -559,7 +569,8 @@ def test_choose_bh_tracers():
     args = parser.parse_args()
     
     message("Reading VR catalogue")
-    mf = phdf5.MultiFile(args.vr_format, file_nr_dataset="Num_of_files", comm=comm)
+    filename = (args.vr_format % {"snap_nr" : args.snap_nr}) + ".%(file_nr)d"
+    mf = phdf5.MultiFile(filename, file_nr_dataset="Num_of_files", comm=comm)
     data = mf.read(("ID", "ID_mbp_bh"))
     subhalo_id = data["ID"]
     subhalo_id_mbp_bh = data["ID_mbp_bh"]
@@ -569,17 +580,21 @@ def test_choose_bh_tracers():
     tracer_id, tracer_pos = choose_bh_tracer(subhalo_id, args.snap_nr, args.final_snap_nr, args.snapshot_format,
                                              args.membership_format, membership_cache)
 
+    # We should find a tracer for all groups where VR found a most bound BH particle
     assert np.all((subhalo_id_mbp_bh==NULL_BH_ID)==(tracer_id==NULL_BH_ID))
 
     # Count how many halos changed their most bound BH ID due to this process
     nr_groups = comm.allreduce(len(subhalo_id))
     nr_groups_changed = comm.allreduce(np.sum(tracer_id != subhalo_id_mbp_bh))
     fraction_changed = nr_groups_changed / nr_groups
-    message(f"Fraction of groups which changed tracer BH ID = {fraction_changed}")
+    message(f"Fraction of groups which changed tracer BH ID = {fraction_changed:.3f}")
 
     #message("Writing results")
     #with h5py.File(args.outfile, "w", driver="mpio", comm=comm) as f:
     #    phdf5.collective_write(f, "tracer_id", tracer_id, comm)
+
+    comm.barrier()
+    message("Done.")
 
 
 def run():
@@ -596,6 +611,6 @@ def run():
 
 
 if __name__ == "__main__":
-    
-    #run()
-    test_choose_bh_tracers()
+
+    #test_choose_bh_tracers()
+    run()
