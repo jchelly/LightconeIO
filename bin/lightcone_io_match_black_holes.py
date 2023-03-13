@@ -235,8 +235,8 @@ def match_black_holes(args):
     # assume exactly the same definitions of Mpc, Msolar etc that SWIFT used.
     if comm_rank == 0:
         physical_constants_cgs = {}
-        snapshot_units = {}
-        filename = args.snapshot_format.format(snap_nr=final_snap, file_nr=0)
+        snapshot_units = {}        
+        filename = (args.snapshot_format % {"snap_nr" : final_snap}) + ".0.hdf5"
         with h5py.File(filename, "r") as infile:
             group = infile["PhysicalConstants/CGS"]
             for name in group.attrs:
@@ -324,12 +324,12 @@ def match_black_holes(args):
         # Choose the tracer BH particle to use for each object.
         # Returns ID and position of the selected BH particle.
         tracer_id, tracer_pos = choose_bh_tracer(merger_tree["Subhalo/ID"][i1:i2],
-                                                 snap_nr, final_snap, args.snapshot_format,
+                                                 snap_nr[redshift_nr], final_snap, args.snapshot_format,
                                                  args.membership_format, membership_cache)
 
         # Store selected tracer particle position and ID
         merger_tree["Subhalo/ID_tracer_bh"][i1:i2] = tracer_id
-        for i, axis in enumerate("X","Y","Z"):
+        for i, axis in enumerate(("X","Y","Z")):
             merger_tree[f"Subhalo/{axis}tracer_bh"][i1:i2] = tracer_pos[:,i]
 
         # Each snapshot populates a redshift range which reaches half way to adjacent snapshots
