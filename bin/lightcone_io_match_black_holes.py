@@ -5,7 +5,6 @@ import sys
 import numpy as np
 import h5py
 import argparse
-import collections
 from mpi4py import MPI
 
 import virgo.util.match as match
@@ -44,12 +43,13 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
 
     # Ensure we have the BH IDs and halo membership for snapshots snap_nr-1,
     # snap_nr and snap_nr+1 (may be in membership_cache already)
-    for sn in (snap_nr-1, snap_nr, snap_nr+1):
+    for sn in (snap_nr+1, snap_nr, snap_nr-1):
         if (sn >= 0) and (sn <= final_snap_nr) and (sn not in membership_cache):
 
-            # Discard excess cache entries (assumes cache is ordered dict)
+            # Discard excess cache entries
             while len(membership_cache) > 2:
-                membership_cache.popitem(last=False)
+                max_snap_in_cache = max(membership_cache.keys())
+                del membership_cache[max_snap_in_cache]
 
             # Read in the black hole particle IDs for this snapshot
             filenames = (snapshot_format % {"snap_nr" : sn}) + ".%(file_nr)d.hdf5"
@@ -312,7 +312,7 @@ def match_black_holes(args):
 
     # Loop over unique redshifts in the trees, excluding the last
     halos_so_far = 0
-    membership_cache = collections.OrderedDict()
+    membership_cache = {}
     for redshift_nr in range(len(redshifts)):
         
         # Find the range of halos which exist at this redshift
