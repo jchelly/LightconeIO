@@ -26,6 +26,28 @@ def message(m):
         print(m)
 
 
+def distributed_amax(arr, comm):
+    """
+    Find maximum over distributed array arr, bearing in mind that some
+    MPI ranks might have zero elements.
+
+    Returns None if all ranks have no elements.
+    """
+    if len(arr) == 0:
+        local_max = None
+    else:
+        local_max = np.amax(arr)
+    all_max = comm.allgather(local_max)
+    global_max = None
+    for m in all_max:
+        if m is not None:
+            if global_max is None:
+                global_max = m
+            elif m > global_max:
+                global_max = m
+    return global_max
+
+
 def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
                      membership_format, membership_cache):
     """
@@ -55,6 +77,12 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
             filenames = (snapshot_format % {"snap_nr" : sn}) + ".%(file_nr)d.hdf5"
             mf1 = phdf5.MultiFile(filenames, file_nr_attr=("Header","NumFilesPerSnapshot"), comm=comm)
             snap_bh_ids, snap_bh_pos = mf1.read(("PartType5/ParticleIDs", "PartType5/Coordinates"), unpack=True)
+            
+            # Check for the case where there are no BHs at this snapshot: MultiFile.read()
+            # returns None if no ranks read any elements.
+            if snap_bh_ids is None:
+                membership_cache[sn] = None
+                continue
 
             # Read in the black hole particle halo membership
             filenames = (membership_format % {"snap_nr" : sn}) + ".%(file_nr)d.hdf5"
@@ -66,7 +94,8 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
             # Assign a large binding energy rank to unbound group member particles:
             # We'll use an arbitrary unbound BH if no bound BH is available.
             unbound = (snap_bh_grnr_bound < 0) & (snap_bh_grnr >= 0)
-            snap_bh_rank[unbound] = np.amax(snap_bh_rank) + 1
+            if sum(unbound) > 0:
+                snap_bh_rank[unbound] = max(1, np.amax(snap_bh_rank) + 1)
             del snap_bh_grnr_bound
             assert len(snap_bh_grnr) == len(snap_bh_ids)
             assert len(snap_bh_rank) == len(snap_bh_ids)
@@ -76,6 +105,13 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
             nr_bh_local = len(snap_bh_ids)
             nr_bh_tot = comm.allreduce(nr_bh_local)
             message(f"    Read {nr_bh_tot} BHs for snapshot {sn}")
+
+    # Check if we have any black holes at this snapshot
+    if membership_cache[sn] is None:
+        tracer_bh_id = np.ndarray(len(subhalo_id), dtype=np.int64)
+        tracer_bh_id[:] = NULL_BH_ID
+        tracer_bh_pos = -np.ones((len(subhalo_id),3), dtype=float)
+        return tracer_bh_id, tracer_bh_pos
 
     # Get number of black holes at snapshot snap_nr
     nr_bh_local = len(membership_cache[snap_nr][0])
@@ -108,8 +144,11 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
     # 2. Should exist at the previous timestep
     # 3. Should be tightly bound
     rank_at_this_snap = membership_cache[snap_nr][2]
-    max_rank = comm.allreduce(np.amax(rank_at_this_snap))
+    max_rank = distributed_amax(rank_at_this_snap, comm)
+    if max_rank is None:
+        max_rank = 1
     bh_priority = (max_rank - rank_at_this_snap).astype(np.int64) # Low rank = high priority
+    assert np.all(bh_priority>=0)
     bh_priority += (max_rank+1)*exists_at_prev_snap               # Boost priority if exists at snap_nr-1
     bh_priority += 2*(max_rank+1)*exists_at_next_snap             # Boost priority more if exists at snap_nr+1
     bh_id   = membership_cache[snap_nr][0]
@@ -125,7 +164,10 @@ def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
     bh_pos = bh_pos[keep,:]
 
     # Sort BH particles by halo and then by priority within a halo
-    sort_key = bh_grnr * (np.amax(bh_priority)+1) + bh_priority
+    max_priority = distributed_amax(bh_priority, comm)
+    if max_priority is None:
+        max_priority = 1
+    sort_key = bh_grnr * (max_priority+1) + bh_priority
     order = psort.parallel_sort(sort_key, return_index=True, comm=comm)
     del sort_key
     bh_priority = psort.fetch_elements(bh_priority, order, comm=comm)
@@ -323,6 +365,7 @@ def match_black_holes(args):
 
         # Choose the tracer BH particle to use for each object.
         # Returns ID and position of the selected BH particle.
+        message(f"  Choosing tracer particles for snapshot {snap_nr[redshift_nr]}")
         tracer_id, tracer_pos = choose_bh_tracer(merger_tree["Subhalo/ID"][i1:i2],
                                                  snap_nr[redshift_nr], final_snap, args.snapshot_format,
                                                  args.membership_format, membership_cache)
@@ -346,7 +389,7 @@ def match_black_holes(args):
         message(f"  Using {nr_halos_in_slice_all} halos at z={redshifts[redshift_nr]:.3f} to populate range z={z1:.3f} to z={z2:.3f}")
 
         # Find halo most bound BH IDs
-        id_mbp_bh = merger_tree["Subhalo/ID_tracer_bh"][i1:i2]
+        id_tracer_bh = merger_tree["Subhalo/ID_tracer_bh"][i1:i2]
         have_bh   = merger_tree["Subhalo/n_bh"][i1:i2] > 0
         mass      = merger_tree["Subhalo/Mass_tot"][i1:i2] * 1.0e10
 
@@ -373,9 +416,9 @@ def match_black_holes(args):
 
         # Try to match BH particles to the halo most bound BH IDs.
         # There may be multiple particles matching each halo due to the periodicity of the box.
-        # Since halos with no black hole have ID_mbp_bh=NULL_BH_ID and this value never appears
+        # Since halos with no black hole have id_tracer_bh=NULL_BH_ID and this value never appears
         # in the particle data, every match will become a halo in the output catalogue.
-        halo_index = psort.parallel_match(particle_data["ParticleIDs"], id_mbp_bh, comm=comm)
+        halo_index = psort.parallel_match(particle_data["ParticleIDs"], id_tracer_bh, comm=comm)
         matched = halo_index>=0
         nr_matched = np.sum(matched)
         nr_matched_all = comm.allreduce(nr_matched)
@@ -394,9 +437,7 @@ def match_black_holes(args):
 
         # Find conversion factor to put positions into comoving, no h units.
         # This needs to be a at the redshift of the snapshot the halo is taken from.
-        a = 1.0/(1.0+halo_slice["Subhalo/Redshift"])
-        assert np.all(a[0]==a)
-        a = float(a[0])
+        a = float(1.0/(1+redshifts[redshift_nr]))
         h = float(vr_sim_info["h_val"])
         if vr_unit_info["Comoving_or_Physical"] == 0:
             # VR position units are physical with no h dependence. Need to convert to comoving.
@@ -484,9 +525,8 @@ def match_black_holes(args):
         halo_pos_in_lightcone = bh_pos_in_lightcone + bh_to_minpot_vector
 
         # Report largest offset between BH and potential minimum
-        max_offset = np.amax(np.abs(bh_to_minpot_vector.flatten()))
-        max_offset = comm.allreduce(max_offset, op=MPI.MAX)
-        if comm_rank == 0:
+        max_offset = distributed_amax(bh_to_minpot_vector.flatten(), comm)
+        if comm_rank == 0 and max_offset is not None:
             message(f"  Maximum minpot/bh offset = {max_offset} (SWIFT length units, comoving)")
 
         # Overwrite the halo position in the output catalogue
