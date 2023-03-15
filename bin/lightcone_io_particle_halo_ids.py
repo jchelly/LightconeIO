@@ -337,24 +337,14 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
 if __name__ == "__main__":
 
     # Get command line arguments
-    if comm.Get_rank() == 0:
-        os.environ['COLUMNS'] = '80' # Can't detect terminal width when running under MPI?
-        parser = ThrowingArgumentParser(description='Create lightcone halo catalogues.')
-        parser.add_argument('lightcone_dir',  help='Directory with lightcone particle outputs')
-        parser.add_argument('lightcone_base', help='Base name of the lightcone to use')
-        parser.add_argument('halo_lightcone_filenames', help='Format string to generate halo lightcone filenames')
-        parser.add_argument('soap_filenames', help='Format string to generate SOAP filenames')
-        parser.add_argument('output_dir',     help='Where to write the output')
-        try:
-            args = parser.parse_args()
-        except ArgumentParserError as e:
-            args = None
-    else:
-        args = None
-    args = comm.bcast(args)
-    if args is None:
-        MPI.Finalize()
-        sys.exit(0)
+    from virgo.mpi.util import MPIArgumentParser
+    parser = MPIArgumentParser(description='Create lightcone halo catalogues.')
+    parser.add_argument('lightcone_dir',  help='Directory with lightcone particle outputs')
+    parser.add_argument('lightcone_base', help='Base name of the lightcone to use')
+    parser.add_argument('halo_lightcone_filenames', help='Format string to generate halo lightcone filenames')
+    parser.add_argument('soap_filenames', help='Format string to generate SOAP filenames')
+    parser.add_argument('output_dir',     help='Where to write the output')
+    args = parser.parse_args()
 
     message(f"Starting on {comm_size} MPI ranks")
 
@@ -383,7 +373,7 @@ if __name__ == "__main__":
 
         # Read in positions of lightcone particles of this type
         message(f"Reading particles")
-        part_pos = mf.read(("Coordinates",), group=ptype)["Coordinates"]
+        part_pos = mf.read("Coordinates", group=ptype)
 
         # Record number of particles read from each file
         elements_per_file = mf.get_elements_per_file("Coordinates", group=ptype)
