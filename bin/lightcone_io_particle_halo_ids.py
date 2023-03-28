@@ -243,13 +243,20 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     halo_pos = halo_pos[order,:]
     halo_id = halo_id[order]
     halo_radius = halo_radius[order]
-    
+    del order
+
     # Determine what range of halos needs to be sent to each MPI rank
     first_halo_for_rank = np.searchsorted(halo_pos[:,0], x_min_on_rank, side="left")
     last_halo_for_rank = np.searchsorted(halo_pos[:,0], x_max_on_rank, side="right")
     nr_halos_for_rank = last_halo_for_rank - first_halo_for_rank
-    message(f"Minimum halos on rank after exchange = {np.amin(nr_halos_for_rank)}")
-    message(f"Maximum halos on rank after exchange = {np.amax(nr_halos_for_rank)}")
+    nr_halos_for_rank_total = comm.allreduce(nr_halos_for_rank)
+    total_nr_halos_read = comm.allreduce(halo_pos.shape[0])
+    total_nr_halos_sent = np.sum(nr_halos_for_rank_total)
+    assert total_nr_halos_sent >= total_nr_halos_read
+    duplication_factor = total_nr_halos_sent / total_nr_halos_read
+    message(f"Minimum halos on rank after exchange = {np.amin(nr_halos_for_rank_total)}")
+    message(f"Maximum halos on rank after exchange = {np.amax(nr_halos_for_rank_total)}")
+    message(f"Duplication factor = {duplication_factor}")
 
     # Compute lengths and offsets for alltoallv halo exchange
     send_offset = first_halo_for_rank
@@ -265,6 +272,7 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
                        comm=comm)
     halo_id = halo_id_recv
     del halo_id_recv
+    comm.barrier()
 
     # Exchange halo radii
     message("Exchanging halo radii")
@@ -274,6 +282,7 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
                        comm=comm)
     halo_radius = halo_radius_recv
     del halo_radius_recv
+    comm.barrier()
     
     # Exchange halo positions:
     # These are vectors so flatten, exchange then restore shape
@@ -286,15 +295,19 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     halo_pos = halo_pos_recv
     halo_pos.shape = (-1, 3)
     del halo_pos_recv
+    comm.barrier()
 
     # Sort halos by radius:
     # This ensures that the most massive halos are dealt with last,
     # so particles are assigned to the most massive overlapping halo.
+    message("Sorting local halos by radius")
     order = np.argsort(halo_radius)
     halo_pos = halo_pos[order,:]
     halo_id = halo_id[order]
     halo_radius = halo_radius[order]
-    
+    del order
+    comm.barrier()
+
     # Allocate output array for the particle halo IDs
     nr_parts = part_pos.shape[0]
     part_halo_id = -np.ones(nr_parts, dtype=np.int64)
@@ -302,7 +315,12 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     # Build a kdtree with the local particles
     message("Building kdtree")
     tree = scipy.spatial.KDTree(part_pos)
+    comm.barrier()
     
+    # Report maximum halo radius
+    #max_radius = comm.allreduce(np.amax(halo_radius), op=MPI.MAX)
+    #message(f"Maximum halo radius = {max_radius}")
+
     # Loop over local halos
     nr_assigned = 0
     message("Assigning halo IDs to particles")
@@ -338,7 +356,7 @@ if __name__ == "__main__":
 
     # Get command line arguments
     from virgo.mpi.util import MPIArgumentParser
-    parser = MPIArgumentParser(description='Create lightcone halo catalogues.')
+    parser = MPIArgumentParser(description='Create lightcone halo catalogues.', comm=comm)
     parser.add_argument('lightcone_dir',  help='Directory with lightcone particle outputs')
     parser.add_argument('lightcone_base', help='Base name of the lightcone to use')
     parser.add_argument('halo_lightcone_filenames', help='Format string to generate halo lightcone filenames')
@@ -374,6 +392,11 @@ if __name__ == "__main__":
         # Read in positions of lightcone particles of this type
         message(f"Reading particles")
         part_pos = mf.read("Coordinates", group=ptype)
+
+        # Report load balancing
+        max_nr_parts = comm.allreduce(part_pos.shape[0], op=MPI.MAX)
+        min_nr_parts = comm.allreduce(part_pos.shape[0], op=MPI.MIN)
+        message(f"No. of particles per rank min={min_nr_parts}, max={max_nr_parts}")
 
         # Record number of particles read from each file
         elements_per_file = mf.get_elements_per_file("Coordinates", group=ptype)
