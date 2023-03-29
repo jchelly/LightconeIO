@@ -393,13 +393,23 @@ if __name__ == "__main__":
         message(f"Reading particles")
         part_pos = mf.read("Coordinates", group=ptype)
 
+        # Record number of particles read from each file
+        elements_per_file = mf.get_elements_per_file("Coordinates", group=ptype)
+
+        # Rebalance particle load between MPI ranks
+        nr_parts_per_rank_read = np.asarray(comm.allgather(part_pos.shape[0]), dtype=int)
+        nr_parts_total = np.sum(nr_parts_per_rank_read)
+        nr_parts_per_rank_balanced = np.zeros_like(nr_parts_per_rank_read)
+        nr_av = (nr_parts_total // comm_size)
+        nr_parts_per_rank_balanced[:] = nr_av
+        nr_parts_per_rank_balanced[:nr_parts_total % comm_size] += 1
+        assert np.sum(nr_parts_per_rank_balanced) == nr_parts_total
+        part_pos = psort.repartition(part_pos, ndesired=nr_parts_per_rank_balanced, comm=comm)
+
         # Report load balancing
         max_nr_parts = comm.allreduce(part_pos.shape[0], op=MPI.MAX)
         min_nr_parts = comm.allreduce(part_pos.shape[0], op=MPI.MIN)
         message(f"No. of particles per rank min={min_nr_parts}, max={max_nr_parts}")
-
-        # Record number of particles read from each file
-        elements_per_file = mf.get_elements_per_file("Coordinates", group=ptype)
 
         # Assign group indexes to the particles
         message("Assigning group indexes")
@@ -407,6 +417,10 @@ if __name__ == "__main__":
         halo_pos = halo_lightcone_data["Pos_minpot"]
         halo_radius = halo_lightcone_data[radius_name]
         part_halo_id = compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos)
+        del part_pos
+
+        # Restore original partitioning of particles
+        part_halo_id = psort.repartition(part_halo_id, ndesired=nr_parts_per_rank_read, comm=comm)
 
         # Write the output, appending to file if this is not the first particle type
         message(f"Writing output to {args.output_dir}")
@@ -426,7 +440,6 @@ if __name__ == "__main__":
                  group=ptype, attrs={"HaloID" : dimensionless_attrs})
 
         # Tidy up before reading next particle type
-        del part_pos
         del part_halo_id
 
         # Only need to create new output files for the first type
