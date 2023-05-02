@@ -20,7 +20,6 @@ input_dir=/cosma8/data/dp004/flamingo/Runs/${sim}/lightcones/
 output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/combined_maps/
 
 # Output is a single large file per map, so stripe
-\rm -rf ${output_dir}
 \mkdir -p ${output_dir}
 lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
 
