@@ -339,7 +339,9 @@ def match_black_holes(args):
         z = merger_tree["Subhalo/Redshift"][first_at_redshift[redshift_nr]:first_at_next_redshift[redshift_nr]]
         if not(np.all(z==redshifts[redshift_nr])):
             raise RuntimeError("Redshift ranges not identified correctly!")
-        snap_nr[redshift_nr] = merger_tree["Subhalo/SnapNum"][first_at_redshift[redshift_nr]]
+        if nr_at_redshift[redshift_nr] > 0:
+            snap_nr[redshift_nr] = merger_tree["Subhalo/SnapNum"][first_at_redshift[redshift_nr]]
+    comm.Allreduce(MPI.IN_PLACE, snap_nr, op=MPI.MAX) # Replace -1s where rank has no halos at snapshot
     assert np.all(snap_nr >= 0)
     message("Identified range of halos at each redshift")
 
