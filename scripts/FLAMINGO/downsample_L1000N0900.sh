@@ -23,7 +23,6 @@ input_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/neutrino_corrected_
 output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/neutrino_corrected_maps_downsampled_${new_nside}/
 
 # Output is a single large file per map, so stripe
-\rm -rf ${output_dir}
 \mkdir -p ${output_dir}
 lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
 

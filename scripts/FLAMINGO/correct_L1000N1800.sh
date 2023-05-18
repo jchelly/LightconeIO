@@ -1,12 +1,11 @@
 #!/bin/bash
 #
 #SBATCH --nodes=1
-#SBATCH --tasks-per-node=128
 #SBATCH --cpus-per-task=1
 #SBATCH -o ./logs/L1000N1800/correct_%x.lightcone%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
-#SBATCH -t 72:00:00
+#SBATCH -t 48:00:00
 #
 
 module purge

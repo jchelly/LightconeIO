@@ -1,12 +1,11 @@
 #!/bin/bash
 #
 #SBATCH --nodes=1
-#SBATCH --tasks-per-node=70
 #SBATCH --cpus-per-task=1
 #SBATCH -o ./logs/L1000N1800/combine_maps_%x.%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
-#SBATCH -t 72:00:00
+#SBATCH -t 48:00:00
 #
 
 module purge
@@ -21,7 +20,6 @@ input_dir=/cosma8/data/dp004/flamingo/Runs/${sim}/lightcones/
 output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/combined_maps/
 
 # Output is a single large file per map, so stripe
-\rm -rf ${output_dir}
 \mkdir -p ${output_dir}
 lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
 
