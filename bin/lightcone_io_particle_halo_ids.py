@@ -46,7 +46,7 @@ def read_lightcone_halo_positions_and_radii(args, radius_name):
 
     # Parallel read the halo catalogue: need (x,y,z), snapnum, id
     message("Reading lightcone halo catalogue")
-    halo_lightcone_datasets = ("Xcminpot", "Ycminpot", "Zcminpot", "SnapNum", "ID")
+    halo_lightcone_datasets = ("LightconeXcminpot", "LightconeYcminpot", "LightconeZcminpot", "SnapNum", "ID")
     mf = phdf5.MultiFile(args.halo_lightcone_filenames, file_nr_attr=("Header", "NumberOfFiles"), comm=comm)
     halo_lightcone_data = mf.read(halo_lightcone_datasets, group="Subhalo", read_attributes=True)
 
@@ -62,12 +62,12 @@ def read_lightcone_halo_positions_and_radii(args, radius_name):
         halo_lightcone_data[name] = psort.repartition(halo_lightcone_data[name], nr_desired, comm=comm)
 
     # Merge x/y/z into a single array
-    halo_pos = np.column_stack((halo_lightcone_data["Xcminpot"],
-                                halo_lightcone_data["Ycminpot"],
-                                halo_lightcone_data["Zcminpot"]))
-    del halo_lightcone_data["Xcminpot"]
-    del halo_lightcone_data["Ycminpot"]
-    del halo_lightcone_data["Zcminpot"]
+    halo_pos = np.column_stack((halo_lightcone_data["LightconeXcminpot"],
+                                halo_lightcone_data["LightconeYcminpot"],
+                                halo_lightcone_data["LightconeZcminpot"]))
+    del halo_lightcone_data["LightconeXcminpot"]
+    del halo_lightcone_data["LightconeYcminpot"]
+    del halo_lightcone_data["LightconeZcminpot"]
     halo_lightcone_data["Pos_minpot"] = halo_pos 
     del halo_pos
 
@@ -231,11 +231,32 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     local_max_radius = np.amax(halo_radius)
     max_radius = comm.allreduce(local_max_radius, op=MPI.MAX)
 
+    # Find maximum distance to any particle
+    local_max_particle_distance = np.amax(np.sqrt(np.sum(part_pos**2, axis=1)))
+    max_particle_distance = comm.allreduce(local_max_particle_distance, op=MPI.MAX)
+
+    # Find the subset of halos which can overlap the particle distribution:
+    # This helps in case the halo lightcone goes out to much higher redshift
+    # than the particle lightcone.
+    halo_distance = np.sqrt(np.sum(halo_pos**2, axis=1))
+    within_distance = halo_distance < (max_particle_distance + max_radius)
+    halo_pos = halo_pos[within_distance,:]
+    halo_id = halo_id[within_distance]
+    halo_radius = halo_radius[within_distance]
+    nr_halos_left = comm.allreduce(halo_id.shape[0], op=MPI.SUM)
+    message(f"Halos within redshift range = {nr_halos_left} of {nr_halos_total}")
+
     # Determine the range of x coordinates of halos which could overlap particles on this rank
     local_x_min = np.amin(part_pos[:,0]) - max_radius
     x_min_on_rank = np.asarray(comm.allgather(local_x_min), dtype=part_pos.dtype)
     local_x_max = np.amax(part_pos[:,0]) + max_radius
     x_max_on_rank = np.asarray(comm.allgather(local_x_max), dtype=part_pos.dtype)
+
+    # # Report partitioning
+    # for i in range(comm_size):
+    #     if comm_rank == i:
+    #         print(f"Rank={comm_rank} has x={local_x_min} to {local_x_max} and {halo_pos.shape[0]} halos")
+    #     comm.barrier()
 
     # Sort local halos by x coordinate
     message("Sorting local lightcone halos by x coordinate")
@@ -252,7 +273,6 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     nr_halos_for_rank_total = comm.allreduce(nr_halos_for_rank)
     total_nr_halos_read = comm.allreduce(halo_pos.shape[0])
     total_nr_halos_sent = np.sum(nr_halos_for_rank_total)
-    assert total_nr_halos_sent >= total_nr_halos_read
     duplication_factor = total_nr_halos_sent / total_nr_halos_read
     message(f"Minimum halos on rank after exchange = {np.amin(nr_halos_for_rank_total)}")
     message(f"Maximum halos on rank after exchange = {np.amax(nr_halos_for_rank_total)}")
@@ -296,6 +316,12 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     halo_pos.shape = (-1, 3)
     del halo_pos_recv
     comm.barrier()
+
+    # # Report partitioning
+    # for i in range(comm_size):
+    #     if comm_rank == i:
+    #         print(f"After repartition: rank={comm_rank} has x={local_x_min} to {local_x_max} and {halo_pos.shape[0]} halos")
+    #     comm.barrier()
 
     # Sort halos by radius:
     # This ensures that the most massive halos are dealt with last,
