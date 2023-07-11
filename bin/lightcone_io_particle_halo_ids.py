@@ -50,6 +50,11 @@ def read_lightcone_halo_positions_and_radii(args, radius_name):
     mf = phdf5.MultiFile(args.halo_lightcone_filenames, file_nr_attr=("Header", "NumberOfFiles"), comm=comm)
     halo_lightcone_data = mf.read(halo_lightcone_datasets, group="Subhalo", read_attributes=True)
 
+    # Store index in halo lightcone of each halo
+    nr_local_halos = len(halo_lightcone_data["ID"])
+    offset = comm.scan(nr_local_halos) - nr_local_halos
+    halo_lightcone_data["IndexInHaloLightcone"] = np.arange(nr_local_halos, dtype=int) + offset
+
     # Repartition halos for better load balancing
     message("Repartition halo catalogue")
     nr_local_halos = len(halo_lightcone_data["ID"])
@@ -252,12 +257,6 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     local_x_max = np.amax(part_pos[:,0]) + max_radius
     x_max_on_rank = np.asarray(comm.allgather(local_x_max), dtype=part_pos.dtype)
 
-    # # Report partitioning
-    # for i in range(comm_size):
-    #     if comm_rank == i:
-    #         print(f"Rank={comm_rank} has x={local_x_min} to {local_x_max} and {halo_pos.shape[0]} halos")
-    #     comm.barrier()
-
     # Sort local halos by x coordinate
     message("Sorting local lightcone halos by x coordinate")
     order = np.argsort(halo_pos[:,0])
@@ -317,12 +316,6 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     del halo_pos_recv
     comm.barrier()
 
-    # # Report partitioning
-    # for i in range(comm_size):
-    #     if comm_rank == i:
-    #         print(f"After repartition: rank={comm_rank} has x={local_x_min} to {local_x_max} and {halo_pos.shape[0]} halos")
-    #     comm.barrier()
-
     # Sort halos by radius:
     # This ensures that the most massive halos are dealt with last,
     # so particles are assigned to the most massive overlapping halo.
@@ -344,8 +337,8 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     comm.barrier()
     
     # Report maximum halo radius
-    #max_radius = comm.allreduce(np.amax(halo_radius), op=MPI.MAX)
-    #message(f"Maximum halo radius = {max_radius}")
+    max_radius = comm.allreduce(np.amax(halo_radius), op=MPI.MAX)
+    message(f"Maximum halo radius = {max_radius}")
 
     # Loop over local halos
     nr_assigned = 0
@@ -439,11 +432,14 @@ if __name__ == "__main__":
 
         # Assign group indexes to the particles
         message("Assigning group indexes")
-        halo_id = halo_lightcone_data["ID"]
+        halo_id = halo_lightcone_data["IndexInHaloLightcone"]
         halo_pos = halo_lightcone_data["Pos_minpot"]
         halo_radius = halo_lightcone_data[radius_name]
         part_halo_id = compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos)
         del part_pos
+        del halo_id
+        del halo_pos
+        del halo_radius
 
         # Restore original partitioning of particles
         part_halo_id = psort.repartition(part_halo_id, ndesired=nr_parts_per_rank_read, comm=comm)
@@ -462,8 +458,8 @@ if __name__ == "__main__":
             "Conversion factor to CGS (not including cosmological corrections)" : (1.0,),
             "Conversion factor to CGS (including cosmological corrections)" : (1.0,),
         }
-        mf.write({"HaloID" : part_halo_id}, elements_per_file, output_filenames, mode,
-                 group=ptype, attrs={"HaloID" : dimensionless_attrs})
+        mf.write({"IndexInHaloLightcone" : part_halo_id}, elements_per_file, output_filenames, mode,
+                 group=ptype, attrs={"IndexInHaloLightcone" : dimensionless_attrs}, gzip=6, shuffle=True)
 
         # Tidy up before reading next particle type
         del part_halo_id
@@ -472,5 +468,49 @@ if __name__ == "__main__":
         create_files = False
         
     comm.barrier()
-    message("Done.")
 
+    # Discard reordered halo lightcone data
+    del halo_lightcone_data
+    del mf
+
+    #
+    # Now, for each particle in the lightcone we have the index in the halo
+    # lightcone of the halo it belongs to.
+    #
+    # Next we re-read the halo lightcone to copy any extra halo properties we
+    # want to store for each particle. This uses less memory than passing all
+    # quantities through the calculation above.
+    #
+    message("Reading lightcone halo properties to copy to output particle files")
+    halo_properties = (
+        "Subhalo/ID",
+        "Subhalo/SnapNum",
+    )
+    mf_in = phdf5.MultiFile(args.halo_lightcone_filenames, file_nr_attr=("Header", "NumberOfFiles"), comm=comm)
+    halo_lightcone_data = mf_in.read(halo_properties, read_attributes=True)
+    halo_lightcone_data["Subhalo/ID"] = halo_lightcone_data["Subhalo/ID"].astype(np.int64) # Avoid using unsigned int
+
+    # Open the set of particle files to update
+    mf_out = phdf5.MultiFile(output_filenames, comm=comm)
+
+    # Loop over particle types to update
+    for ptype in type_z_range:
+   
+        message(f"Reading halo index for particles of type {ptype}")
+        halo_index = mf_out.read(f"{ptype}/IndexInHaloLightcone")
+        elements_per_file = mf_out.get_elements_per_file(f"{ptype}/IndexInHaloLightcone")
+        
+        for prop_name in halo_properties:
+            message(f"Pass through quantity {prop_name} for type {ptype}")
+            in_halo = (halo_index >= 0)
+            dtype = halo_lightcone_data[prop_name].dtype
+            shape = (halo_index.shape[0],)+halo_lightcone_data[prop_name].shape[1:]
+            prop_data = -np.ones(shape, dtype=dtype) # Set property=-1 if particle not in halo
+            prop_data[in_halo,...] = psort.fetch_elements(halo_lightcone_data[prop_name], halo_index[in_halo], comm=comm)
+            # Write the new dataset to the output files
+            dataset_name = f"{ptype}/{prop_name.split('/')[-1]}"
+            mf_out.write({dataset_name : prop_data}, elements_per_file, output_filenames, "r+",
+                         attrs={dataset_name : halo_lightcone_data[prop_name].attrs},
+                         gzip=6, shuffle=True)
+
+    message("Done.")
