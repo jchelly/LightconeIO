@@ -20,13 +20,6 @@ import virgo.mpi.parallel_hdf5 as phdf5
 import virgo.mpi.parallel_sort as psort
 import virgo.mpi.util as mpi_util
 
-class ArgumentParserError(Exception): pass
-
-class ThrowingArgumentParser(argparse.ArgumentParser):
-    def error(self, message):
-        sys.stderr.write(message+"\n")
-        raise ArgumentParserError(message)
-
 
 def message(m):
     if comm_rank == 0:
@@ -483,21 +476,19 @@ if __name__ == "__main__":
         # Write the output, appending to file if this is not the first particle type
         message(f"Writing output to {args.output_dir}")
         mode = "w" if create_files else "r+"
-
-        # Write halo IDs
-        dimensionless_attrs = halo_lightcone_data["ID"].attrs
-        mf.write({"IndexInHaloLightcone" : part_halo_id}, elements_per_file, output_filenames, mode,
-                 group=ptype, attrs={"IndexInHaloLightcone" : dimensionless_attrs}, gzip=6, shuffle=True)
-
-        # Write fractional radii
-        mf.write({"FractionalRadius" : part_halo_r_frac}, elements_per_file, output_filenames, mode,
-                 group=ptype, attrs={"FractionalRadius" : dimensionless_attrs}, gzip=6, shuffle=True)
-        
-        # Write halo masses
-        mass_attrs = halo_lightcone_data[mass_name].attrs
-        mf.write({"HaloMass" : part_halo_mass}, elements_per_file, output_filenames, mode,
-                 group=ptype, attrs={"HaloMass" : mass_attrs}, gzip=6, shuffle=True)
-        
+        datasets = {
+            "IndexInHaloLightcone" : part_halo_id,
+            "FractionalRadius" : part_halo_r_frac,
+            "HaloMass" : part_halo_mass,
+        }
+        attributes = {
+            "IndexInHaloLightcone" : halo_lightcone_data["ID"].attrs,
+            "FractionalRadius" : halo_lightcone_data["ID"].attrs,
+            "HaloMass" : halo_lightcone_data[mass_name].attrs,
+        }
+        mf.write(datasets, elements_per_file, output_filenames, mode,
+                 group=ptype, attrs=attributes, gzip=6, shuffle=True)
+                
         # Tidy up before reading next particle type
         del part_halo_id
         del part_halo_r_frac
