@@ -214,6 +214,28 @@ COSMA-8 in scripts/FLAMINGO/sort_L1000N1800.sh.
 Note that this script requires the virgo python module from
 https://github.com/jchelly/VirgoDC .
 
+## Computing halo membership in particle lightcones
+
+The script `bin/lightcone_io_particle_halo_ids.py` can compute halo membership
+for particles in the particle lightcone outputs. It works as follows:
+
+  * The full halo lightcone is read in
+  * For each halo in the halo lightcone we look up a mass and radius from SOAP
+    (so SOAP must have been run on all snapshots)
+  * The lightcone particles are read in
+  * Particles within the radius of each halo in the halo lightcone are flagged
+    as belonging to that halo
+  * For each particle in the lightcone we write out the associated halo ID and mass
+
+The mass and radius to use are specified by the name of the SOAP group
+which they should be read from (e.g. "SO/200_crit") so it's possible
+to run the code using various halo radius definitions. Where the radii
+of several halos overlap we assign the particle to the halo where the
+particle radius in units of the halo radius is smallest.
+
+There is a batch script to run this code on FLAMINGO on COSMA-8 in
+./scripts/FLAMINGO/halo_ids_L1000N1800.sh.
+
 ## Example Scripts
 
 ### Plotting a HEALPix map

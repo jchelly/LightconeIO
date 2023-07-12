@@ -35,8 +35,9 @@ lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
 script=../../bin/lightcone_io_particle_halo_ids.py 
 
 mpirun --output-filename halo_ids python3 -m mpi4py ${script} \
-    "${lightcone_dir}" "${lightcone_base}" \
+    "${lightcone_dir}" \
+    "${lightcone_base}" \
     "${halo_lightcone_filenames}" \
     "${soap_filenames}" \
-    "SO/200_crit/SORadius" \
+    "SO/200_crit" \
     "${output_dir}"
