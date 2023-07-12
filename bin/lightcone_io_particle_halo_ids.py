@@ -468,7 +468,7 @@ if __name__ == "__main__":
         halo_pos = halo_lightcone_data["Pos_minpot"]
         halo_radius = halo_lightcone_data[radius_name]
         halo_mass = halo_lightcone_data[mass_name]
-        part_halo_id = compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part_pos)
+        part_halo_id, part_halo_mass, part_halo_r_frac = compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part_pos)
         del part_pos
         del halo_id
         del halo_pos
@@ -477,26 +477,31 @@ if __name__ == "__main__":
 
         # Restore original partitioning of particles
         part_halo_id = psort.repartition(part_halo_id, ndesired=nr_parts_per_rank_read, comm=comm)
+        part_halo_mass = psort.repartition(part_halo_mass, ndesired=nr_parts_per_rank_read, comm=comm)
+        part_halo_r_frac = psort.repartition(part_halo_r_frac, ndesired=nr_parts_per_rank_read, comm=comm)
 
         # Write the output, appending to file if this is not the first particle type
         message(f"Writing output to {args.output_dir}")
         mode = "w" if create_files else "r+"
-        dimensionless_attrs = {
-            "U_I exponent" : (0.0,),
-            "U_L exponent" : (0.0,),
-            "U_M exponent" : (0.0,),
-            "U_T exponent" : (0.0,),
-            "U_t exponent" : (0.0,),
-            "a-scale exponent" : (0.0,),
-            "h-scale exponent" : (0.0,),
-            "Conversion factor to CGS (not including cosmological corrections)" : (1.0,),
-            "Conversion factor to CGS (including cosmological corrections)" : (1.0,),
-        }
+
+        # Write halo IDs
+        dimensionless_attrs = halo_lightcone_data["ID"].attrs
         mf.write({"IndexInHaloLightcone" : part_halo_id}, elements_per_file, output_filenames, mode,
                  group=ptype, attrs={"IndexInHaloLightcone" : dimensionless_attrs}, gzip=6, shuffle=True)
 
+        # Write fractional radii
+        mf.write({"FractionalRadius" : part_halo_r_frac}, elements_per_file, output_filenames, mode,
+                 group=ptype, attrs={"FractionalRadius" : dimensionless_attrs}, gzip=6, shuffle=True)
+        
+        # Write halo masses
+        mass_attrs = halo_lightcone_data[mass_name].attrs
+        mf.write({"HaloMass" : part_halo_mass}, elements_per_file, output_filenames, mode,
+                 group=ptype, attrs={"HaloMass" : mass_attrs}, gzip=6, shuffle=True)
+        
         # Tidy up before reading next particle type
         del part_halo_id
+        del part_halo_r_frac
+        del part_halo_mass
 
         # Only need to create new output files for the first type
         create_files = False
