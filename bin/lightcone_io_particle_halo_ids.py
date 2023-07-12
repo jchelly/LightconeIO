@@ -35,10 +35,10 @@ def message(m):
         print(f"{elapsed:.1f}s: {m}")
 
 
-def read_lightcone_halo_positions_and_radii(args, radius_name):
+def read_lightcone_halo_positions_and_radii(args, radius_name, mass_name):
     """
     Read in the lightcone halo catalogue and cross reference with SOAP
-    to find the SO radius for each halo in the lightcone.
+    to find the SO radius and mass for each halo in the lightcone.
 
     Assumes that positions in the lightcone are comoving and in the
     same units as SOAP (except for the expansion factor dependence).
@@ -121,7 +121,7 @@ def read_lightcone_halo_positions_and_radii(args, radius_name):
     for snapnum in unique_snap_all:
 
         # Datasets to read from SOAP
-        soap_datasets = ("VR/ID", radius_name)
+        soap_datasets = ("VR/ID", radius_name, mass_name)
 
         # Read the SOAP catalogue for this snapshot
         message(f"Reading SOAP output for snapshot {snapnum}")
@@ -152,14 +152,20 @@ def read_lightcone_halo_positions_and_radii(args, radius_name):
         if halo_lightcone_data[radius_name] is None:
             radius_dtype = soap_data[radius_name].dtype
             halo_lightcone_data[radius_name] = -np.ones(nr_halos, dtype=radius_dtype)
+            mass_dtype = soap_data[mass_name].dtype
+            halo_lightcone_data[mass_name] = -np.ones(nr_halos, dtype=mass_dtype)
 
-        # Store the SO radius for each lightcone halo
         message("Storing SO radii for lightcone halos at this snapshot")
         psort.fetch_elements(soap_data[radius_name], ptr,
                              result=halo_lightcone_data[radius_name][i1:i2], comm=comm)
 
+        message("Storing SO masses for lightcone halos at this snapshot")
+        psort.fetch_elements(soap_data[mass_name], ptr,
+                             result=halo_lightcone_data[mass_name][i1:i2], comm=comm)
+
     # All halos should have been assigned a radius
     assert np.all(halo_lightcone_data[radius_name] >= 0)
+    assert np.all(halo_lightcone_data[mass_name] >= 0)
 
     return halo_lightcone_data
 
@@ -207,7 +213,7 @@ def read_lightcone_index(args):
     return type_z_range, all_particle_files
 
 
-def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
+def compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part_pos):
     """
     Tag particles which are within the SO radius of a halo
     """
@@ -248,6 +254,7 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     halo_pos = halo_pos[within_distance,:]
     halo_id = halo_id[within_distance]
     halo_radius = halo_radius[within_distance]
+    halo_mass = halo_mass[within_distance]
     nr_halos_left = comm.allreduce(halo_id.shape[0], op=MPI.SUM)
     message(f"Halos within redshift range = {nr_halos_left} of {nr_halos_total}")
 
@@ -263,6 +270,7 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     halo_pos = halo_pos[order,:]
     halo_id = halo_id[order]
     halo_radius = halo_radius[order]
+    halo_mass = halo_mass[order]
     del order
 
     # Determine what range of halos needs to be sent to each MPI rank
@@ -302,6 +310,16 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     halo_radius = halo_radius_recv
     del halo_radius_recv
     comm.barrier()
+
+    # Exchange halo masses
+    message("Exchanging halo masses")
+    halo_mass_recv = np.empty_like(halo_mass, shape=np.sum(recv_count))
+    psort.my_alltoallv(halo_mass, send_count, send_offset,
+                       halo_mass_recv, recv_count, recv_offset,
+                       comm=comm)
+    halo_mass = halo_mass_recv
+    del halo_mass_recv
+    comm.barrier()
     
     # Exchange halo positions:
     # These are vectors so flatten, exchange then restore shape
@@ -316,26 +334,17 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     del halo_pos_recv
     comm.barrier()
 
-    # Sort halos by radius:
-    # This ensures that the most massive halos are dealt with last,
-    # so particles are assigned to the most massive overlapping halo.
-    message("Sorting local halos by radius")
-    order = np.argsort(halo_radius)
-    halo_pos = halo_pos[order,:]
-    halo_id = halo_id[order]
-    halo_radius = halo_radius[order]
-    del order
-    comm.barrier()
-
-    # Allocate output array for the particle halo IDs
-    nr_parts = part_pos.shape[0]
-    part_halo_id = -np.ones(nr_parts, dtype=np.int64)
-
     # Build a kdtree with the local particles
     message("Building kdtree")
     tree = scipy.spatial.KDTree(part_pos)
-    comm.barrier()
-    
+
+    # Allocate output array for the particle halo IDs etc
+    nr_parts = part_pos.shape[0]
+    part_halo_id = -np.ones(nr_parts, dtype=np.int64)         # ID of halo particle is assigned to
+    part_halo_mass = -np.ones(nr_parts, dtype=np.float32)     # Mass of the halo
+    part_halo_r_frac_2 = np.ndarray(nr_parts, dtype=np.float32) # Smallest ((Particle radius)/(halo r200))**2 so far
+    part_halo_r_frac_2[:] = np.finfo(np.float32).max            # Initialize to max possible value
+
     # Report maximum halo radius
     max_radius = comm.allreduce(np.amax(halo_radius), op=MPI.MAX)
     message(f"Maximum halo radius = {max_radius}")
@@ -348,9 +357,21 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
         # Identify particles within this halo's radius
         idx = tree.query_ball_point(halo_pos[i,:], halo_radius[i])
 
-        # Tag particles within the radius with the halo ID
-        part_halo_id[idx] = halo_id[i]
-        nr_assigned += len(idx)
+        # Compute radius squared for each particle
+        r_part_2 = np.sum((part_pos[idx,:] - halo_pos[i,:])**2.0, axis=1)
+        
+        # Compute ((particle radius)/(halo radius))**2
+        r_frac_2 = r_part_2 / (halo_radius[i]**2)
+        
+        # Identify particles where this value is smaller than the smallest so far
+        to_update = r_frac_2 < part_halo_r_frac_2[idx]
+        idx = idx[to_update]
+
+        # Tag particles to update with the halo ID, mass and fractional radius
+        part_halo_id[idx]       = halo_id[i]
+        part_halo_mass[idx]     = halo_mass[i]
+        part_halo_r_frac_2[idx] = r_frac_2[to_update]
+        nr_assigned            += len(idx)
 
     nr_assigned_tot = comm.allreduce(nr_assigned)
     fraction_assigned = nr_assigned_tot / nr_particles_total
@@ -360,15 +381,24 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos):
     # Tidy up
     del halo_id
     del halo_pos
+    del halo_radius
+    del halo_mass
     del part_pos
 
-    # Restore original particle ordering and return halo IDs
+    # Return r_frac=r/r200 for particles in halos and -1 for those not in halos
+    in_halo = (part_halo_id >= 0)
+    part_halo_r_frac = np.where(in_halo, np.sqrt(part_halo_r_frac_2), -1.0)
+    del part_halo_r_frac_2
+
+    # Restore original particle ordering and return halo IDs etc
     message("Restoring particle order")
     order = psort.parallel_sort(part_index, return_index=True, comm=comm)
     del part_index
     psort.fetch_elements(part_halo_id, order, result=part_halo_id, comm=comm)
+    psort.fetch_elements(part_halo_mass, order, result=part_halo_mass, comm=comm)
+    psort.fetch_elements(part_halo_r_frac, order, result=part_halo_r_frac, comm=comm)
 
-    return part_halo_id
+    return part_halo_id, part_halo_mass, part_halo_r_frac
 
 
 if __name__ == "__main__":
@@ -380,14 +410,16 @@ if __name__ == "__main__":
     parser.add_argument('lightcone_base', help='Base name of the lightcone to use')
     parser.add_argument('halo_lightcone_filenames', help='Format string to generate halo lightcone filenames')
     parser.add_argument('soap_filenames', help='Format string to generate SOAP filenames')
+    parser.add_argument('soap_so_name', help='Name of SOAP group with the halo mass and radius, e.g. "SO/200_crit"')
     parser.add_argument('output_dir',     help='Where to write the output')
     args = parser.parse_args()
 
     message(f"Starting on {comm_size} MPI ranks")
 
     # Read in position and radius for halos in the lightcone
-    radius_name = "SO/200_crit/SORadius"
-    halo_lightcone_data = read_lightcone_halo_positions_and_radii(args, radius_name)
+    radius_name = f"{args.soap_so_name}/SORadius"
+    mass_name = f"{args.soap_so_name}/TotalMass"
+    halo_lightcone_data = read_lightcone_halo_positions_and_radii(args, radius_name, mass_name)
 
     # Locate the particle data
     type_z_range, all_particle_files = read_lightcone_index(args)
@@ -435,11 +467,13 @@ if __name__ == "__main__":
         halo_id = halo_lightcone_data["IndexInHaloLightcone"]
         halo_pos = halo_lightcone_data["Pos_minpot"]
         halo_radius = halo_lightcone_data[radius_name]
-        part_halo_id = compute_particle_group_index(halo_id, halo_pos, halo_radius, part_pos)
+        halo_mass = halo_lightcone_data[mass_name]
+        part_halo_id = compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part_pos)
         del part_pos
         del halo_id
         del halo_pos
         del halo_radius
+        del halo_mass
 
         # Restore original partitioning of particles
         part_halo_id = psort.repartition(part_halo_id, ndesired=nr_parts_per_rank_read, comm=comm)

@@ -21,13 +21,13 @@ lightcone_dir="/cosma8/data/dp004/flamingo/Runs/${sim}/particle_lightcones/"
 lightcone_base="lightcone${lightcone_nr}"
 
 # Location of the halo lightcone
-halo_lightcone_filenames="/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/HYDRO_FIDUCIAL/lightcone_halos_bh_fix/${lightcone_base}/lightcone_halos_%(file_nr)04d.hdf5"
+halo_lightcone_filenames="/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/HYDRO_FIDUCIAL/lightcone_halos/${lightcone_base}/lightcone_halos_%(file_nr)04d.hdf5"
 
 # Location of SOAP catalogues
 soap_filenames="/cosma8/data/dp004/flamingo/Runs/L1000N1800/HYDRO_FIDUCIAL/SOAP/halo_properties_%(snap_nr)04d.hdf5"
 
 # Where to write the output
-output_dir="/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcone_particle_halo_ids_bh_fix/lightcone${lightcone_nr}/"
+output_dir="/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcone_particle_halo_ids/lightcone${lightcone_nr}/"
 \mkdir -p ${output_dir}
 lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
 
@@ -38,4 +38,5 @@ mpirun --output-filename halo_ids python3 -m mpi4py ${script} \
     "${lightcone_dir}" "${lightcone_base}" \
     "${halo_lightcone_filenames}" \
     "${soap_filenames}" \
+    "SO/200_crit/SORadius" \
     "${output_dir}"
