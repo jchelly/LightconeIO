@@ -233,6 +233,33 @@ to run the code using various halo radius definitions. Where the radii
 of several halos overlap we assign the particle to the halo where the
 particle radius in units of the halo radius is smallest.
 
+This is also parallelized using mpi4py. To run it:
+```
+# Location of the lightcone particle data
+lightcone_dir="/cosma8/data/dp004/flamingo/Runs/L1000N1800/HYDRO_FIDUCIAL/particle_lightcones/"
+lightcone_base="lightcone0"
+
+# Format string to generate halo lightcone filenames
+halo_lightcone_filenames="/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/HYDRO_FIDUCIAL/lightcone_halos/${lightcone_base}/lightcone_halos_%(file_nr)04d.hdf5"
+
+# Format string to generate SOAP catalogue filenames
+soap_filenames="/cosma8/data/dp004/flamingo/Runs/L1000N1800/HYDRO_FIDUCIAL/SOAP/halo_properties_%(snap_nr)04d.hdf5"
+
+# Directory to write the output to
+output_dir="/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcone_particle_halo_ids/lightcone${lightcone_nr}/"
+
+# Assume we're running from scripts/FLAMINGO in the source directory
+script=../../bin/lightcone_io_particle_halo_ids.py 
+
+mpirun python3 -m mpi4py ${script} \
+    "${lightcone_dir}" \
+    "${lightcone_base}" \
+    "${halo_lightcone_filenames}" \
+    "${soap_filenames}" \
+    "SO/200_crit" \
+    "${output_dir}"
+```
+
 There is a batch script to run this code on FLAMINGO on COSMA-8 in
 ./scripts/FLAMINGO/halo_ids_L1000N1800.sh.
 
