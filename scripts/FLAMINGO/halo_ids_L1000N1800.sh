@@ -39,5 +39,7 @@ mpirun --output-filename halo_ids python3 -m mpi4py ${script} \
     "${lightcone_base}" \
     "${halo_lightcone_filenames}" \
     "${soap_filenames}" \
-    "SO/200_crit" \
-    "${output_dir}"
+    "${output_dir}" \
+    --soap-so-name="SO/200_crit" \
+    --overlap-method="fractional-radius"
+

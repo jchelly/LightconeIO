@@ -21,6 +21,17 @@ import virgo.mpi.parallel_sort as psort
 import virgo.mpi.util as mpi_util
 
 
+# Constants to identify methods for dealing with particles in multiple halos
+FRACTIONAL_RADIUS=0
+MOST_MASSIVE=1
+LEAST_MASSIVE=2
+overlap_methods = {
+    "fractional_radius" : FRACTIONAL_RADIUS,
+    "most_massive"      : MOST_MASSIVE,
+    "least_massive"     : LEAST_MASSIVE,
+    }
+
+
 def message(m):
     if comm_rank == 0:
         t1 = time.time()
@@ -208,7 +219,8 @@ def read_lightcone_index(args):
     return type_z_range, all_particle_files
 
 
-def compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part_pos):
+def compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part_pos,
+                                 overlap_method):
     """
     Tag particles which are within the SO radius of a halo
     """
@@ -337,8 +349,7 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part
     nr_parts = part_pos.shape[0]
     part_halo_id = -np.ones(nr_parts, dtype=np.int64)         # ID of halo particle is assigned to
     part_halo_mass = -np.ones(nr_parts, dtype=np.float32)     # Mass of the halo
-    part_halo_r_frac_2 = np.ndarray(nr_parts, dtype=np.float32) # Smallest ((Particle radius)/(halo r200))**2 so far
-    part_halo_r_frac_2[:] = np.finfo(np.float32).max            # Initialize to max possible value
+    part_halo_r_frac_2 = -np.ones(nr_parts, dtype=np.float32) # Smallest ((Particle radius)/(halo r200))**2 so far
 
     # Report maximum halo radius
     max_radius = comm.allreduce(np.amax(halo_radius), op=MPI.MAX)
@@ -357,9 +368,22 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part
         
         # Compute ((particle radius)/(halo radius))**2
         r_frac_2 = r_part_2 / (halo_radius[i]**2)
-        
-        # Identify particles where this value is smaller than the smallest so far
-        to_update = r_frac_2 < part_halo_r_frac_2[idx]
+
+        # Identify particles to update
+        if overlap_method == FRACTIONAL_RADIUS:
+            # Assign particles to this halo if (particle radius)/(halo radius) is smaller
+            # than the smallest value so far
+            to_update = (r_frac_2 < part_halo_r_frac_2[idx]) | (part_halo_r_frac_2[idx] < 0.0)
+        elif overlap_method == MOST_MASSIVE:
+            # Assign particles to this halo if this is the most massive halo the particle
+            # has been found to be in so far
+            to_update = halo_mass[i] > part_halo_mass[idx]
+        elif overlap_method == LEAST_MASSIVE:
+            # Assign particles to this halo if this is the least massive halo the particle
+            # has been found to be in so far
+            to_update = (halo_mass[i] < part_halo_mass[idx]) | (part_halo_mass[idx] < 0.0)
+        else:
+            raise ValueError("Unrecognized value of overlap_method")        
         idx = idx[to_update]
 
         # Tag particles to update with the halo ID, mass and fractional radius
@@ -397,6 +421,9 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part
 
 
 def main(args):
+
+    # Determine method to deal with overlapping halos
+    overlap_method = overlap_methods[args.overlap_method]
     
     # Read in position and radius for halos in the lightcone
     radius_name = f"{args.soap_so_name}/SORadius"
@@ -450,7 +477,7 @@ def main(args):
         halo_pos = halo_lightcone_data["Pos_minpot"]
         halo_radius = halo_lightcone_data[radius_name]
         halo_mass = halo_lightcone_data[mass_name]
-        part_halo_id, part_halo_mass, part_halo_r_frac = compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part_pos)
+        part_halo_id, part_halo_mass, part_halo_r_frac = compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part_pos, overlap_method)
         del part_pos
         del halo_id
         del halo_pos
@@ -542,8 +569,11 @@ if __name__ == "__main__":
     parser.add_argument('lightcone_base', help='Base name of the lightcone to use')
     parser.add_argument('halo_lightcone_filenames', help='Format string to generate halo lightcone filenames')
     parser.add_argument('soap_filenames', help='Format string to generate SOAP filenames')
-    parser.add_argument('soap_so_name',   help='Name of SOAP group with the halo mass and radius, e.g. "SO/200_crit"')
     parser.add_argument('output_dir',     help='Where to write the output')
+    parser.add_argument('--soap_so_name', type=str, default="SO/200_crit",
+                        help='Name of SOAP group with the halo mass and radius, e.g. "SO/200_crit"')
+    parser.add_argument('--overlap-method', type=str, default="fractional_radius", choices=list(overlap_methods),
+                        help="How to assign particles which are in overlapping halos")
     args = parser.parse_args()
 
     message(f"Starting on {comm_size} MPI ranks")

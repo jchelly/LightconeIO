@@ -228,10 +228,18 @@ for particles in the particle lightcone outputs. It works as follows:
   * For each particle in the lightcone we write out the associated halo ID and mass
 
 The mass and radius to use are specified by the name of the SOAP group
-which they should be read from (e.g. "SO/200_crit") so it's possible
-to run the code using various halo radius definitions. Where the radii
-of several halos overlap we assign the particle to the halo where the
-particle radius in units of the halo radius is smallest.
+which they should be read from (e.g. `--soap-so-name="SO/200_crit"`)
+so it's possible to run the code using various halo radius
+definitions.
+
+Where the radii of several halos overlap there are three different
+ways we can decide which halo to assign the particle to. These are
+specified using the command line flag `--overlap-method`. Possible
+values are
+
+  * `fractional-radius`: for each particle we compute the distance to the halo centre in units of the halo radius. Particles are assigned to the halo for which this value is lowest.
+  * `most-massive`: particles within the radius of multiple halos are assigned to the most massive halo
+  * `least-massive`: particles within the radius of multiple halos are assigned to the least massive halo
 
 This is also parallelized using mpi4py. To run it:
 ```
@@ -256,8 +264,9 @@ mpirun python3 -m mpi4py ${script} \
     "${lightcone_base}" \
     "${halo_lightcone_filenames}" \
     "${soap_filenames}" \
-    "SO/200_crit" \
-    "${output_dir}"
+    "${output_dir}" \
+     --soap-so-name="SO/200_crit" \
+     --overlap-method=fractional_radius
 ```
 
 There is a batch script to run this code on FLAMINGO on COSMA-8 in
