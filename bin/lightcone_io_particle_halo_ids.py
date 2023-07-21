@@ -26,9 +26,9 @@ FRACTIONAL_RADIUS=0
 MOST_MASSIVE=1
 LEAST_MASSIVE=2
 overlap_methods = {
-    "fractional_radius" : FRACTIONAL_RADIUS,
-    "most_massive"      : MOST_MASSIVE,
-    "least_massive"     : LEAST_MASSIVE,
+    "fractional-radius" : FRACTIONAL_RADIUS,
+    "most-massive"      : MOST_MASSIVE,
+    "least-massive"     : LEAST_MASSIVE,
     }
 
 
@@ -570,9 +570,9 @@ if __name__ == "__main__":
     parser.add_argument('halo_lightcone_filenames', help='Format string to generate halo lightcone filenames')
     parser.add_argument('soap_filenames', help='Format string to generate SOAP filenames')
     parser.add_argument('output_dir',     help='Where to write the output')
-    parser.add_argument('--soap_so_name', type=str, default="SO/200_crit",
+    parser.add_argument('--soap-so-name', type=str, default="SO/200_crit",
                         help='Name of SOAP group with the halo mass and radius, e.g. "SO/200_crit"')
-    parser.add_argument('--overlap-method', type=str, default="fractional_radius", choices=list(overlap_methods),
+    parser.add_argument('--overlap-method', type=str, default="fractional-radius", choices=list(overlap_methods),
                         help="How to assign particles which are in overlapping halos")
     args = parser.parse_args()
 
