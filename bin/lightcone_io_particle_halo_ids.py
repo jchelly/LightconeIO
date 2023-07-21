@@ -144,9 +144,11 @@ def read_lightcone_halo_positions_and_radii(args, radius_name, mass_name):
         # Allocate storage for radii now that we know what dtype SOAP uses
         if halo_lightcone_data[radius_name] is None:
             radius_dtype = soap_data[radius_name].dtype
-            halo_lightcone_data[radius_name] = -np.ones(nr_halos, dtype=radius_dtype)
+            halo_lightcone_data[radius_name] = phdf5.AttributeArray(-np.ones(nr_halos, dtype=radius_dtype),
+                                                                    attrs=soap_data[radius_name].attrs)
             mass_dtype = soap_data[mass_name].dtype
-            halo_lightcone_data[mass_name] = -np.ones(nr_halos, dtype=mass_dtype)
+            halo_lightcone_data[mass_name] = phdf5.AttributeArray(-np.ones(nr_halos, dtype=mass_dtype),
+                                                                  attrs=soap_data[mass_name].attrs)
 
         message("Storing SO radii for lightcone halos at this snapshot")
         psort.fetch_elements(soap_data[radius_name], ptr,
@@ -348,7 +350,7 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part
     for i in range(len(halo_id)):
             
         # Identify particles within this halo's radius
-        idx = tree.query_ball_point(halo_pos[i,:], halo_radius[i])
+        idx = np.asarray(tree.query_ball_point(halo_pos[i,:], halo_radius[i]), dtype=int)
 
         # Compute radius squared for each particle
         r_part_2 = np.sum((part_pos[idx,:] - halo_pos[i,:])**2.0, axis=1)
@@ -394,21 +396,8 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part
     return part_halo_id, part_halo_mass, part_halo_r_frac
 
 
-if __name__ == "__main__":
-
-    # Get command line arguments
-    from virgo.mpi.util import MPIArgumentParser
-    parser = MPIArgumentParser(description='Create lightcone halo catalogues.', comm=comm)
-    parser.add_argument('lightcone_dir',  help='Directory with lightcone particle outputs')
-    parser.add_argument('lightcone_base', help='Base name of the lightcone to use')
-    parser.add_argument('halo_lightcone_filenames', help='Format string to generate halo lightcone filenames')
-    parser.add_argument('soap_filenames', help='Format string to generate SOAP filenames')
-    parser.add_argument('soap_so_name', help='Name of SOAP group with the halo mass and radius, e.g. "SO/200_crit"')
-    parser.add_argument('output_dir',     help='Where to write the output')
-    args = parser.parse_args()
-
-    message(f"Starting on {comm_size} MPI ranks")
-
+def main(args):
+    
     # Read in position and radius for halos in the lightcone
     radius_name = f"{args.soap_so_name}/SORadius"
     mass_name = f"{args.soap_so_name}/TotalMass"
@@ -543,4 +532,20 @@ if __name__ == "__main__":
                          attrs={dataset_name : halo_lightcone_data[prop_name].attrs},
                          gzip=6, shuffle=True)
 
+    
+if __name__ == "__main__":
+
+    # Get command line arguments
+    from virgo.mpi.util import MPIArgumentParser
+    parser = MPIArgumentParser(description='Create lightcone halo catalogues.', comm=comm)
+    parser.add_argument('lightcone_dir',  help='Directory with lightcone particle outputs')
+    parser.add_argument('lightcone_base', help='Base name of the lightcone to use')
+    parser.add_argument('halo_lightcone_filenames', help='Format string to generate halo lightcone filenames')
+    parser.add_argument('soap_filenames', help='Format string to generate SOAP filenames')
+    parser.add_argument('soap_so_name',   help='Name of SOAP group with the halo mass and radius, e.g. "SO/200_crit"')
+    parser.add_argument('output_dir',     help='Where to write the output')
+    args = parser.parse_args()
+
+    message(f"Starting on {comm_size} MPI ranks")
+    main(args)
     message("Done.")
