@@ -347,9 +347,16 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part
 
     # Allocate output array for the particle halo IDs etc
     nr_parts = part_pos.shape[0]
-    part_halo_id = -np.ones(nr_parts, dtype=np.int64)         # ID of halo particle is assigned to
-    part_halo_mass = -np.ones(nr_parts, dtype=np.float32)     # Mass of the halo
-    part_halo_r_frac_2 = -np.ones(nr_parts, dtype=np.float32) # Smallest ((Particle radius)/(halo r200))**2 so far
+    part_halo_id = -np.ones(nr_parts, dtype=np.int64)       # ID of halo particle is assigned to
+    part_halo_mass = np.ndarray(nr_parts, dtype=np.float32) # Mass of the halo
+    if overlap_method == LEAST_MASSIVE:
+        # Looking for least massive halo, so initialize mass to huge value
+        part_halo_mass[:] = np.finfo(part_halo_mass.dtype).max
+    else:
+        # Looking for most massive halo or not using mass, so initialize mass to -1
+        part_halo_mass[:] = -1
+    part_halo_r_frac_2 = -np.ndarray(nr_parts, dtype=np.float32) # Smallest ((Particle radius)/(halo r200))**2 so far
+    part_halo_r_frac_2[:] = np.finfo(part_halo_r_frac_2.dtype).max  # Initialize min. fractional radius to huge value
 
     # Report maximum halo radius
     max_radius = comm.allreduce(np.amax(halo_radius), op=MPI.MAX)
@@ -373,15 +380,15 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part
         if overlap_method == FRACTIONAL_RADIUS:
             # Assign particles to this halo if (particle radius)/(halo radius) is smaller
             # than the smallest value so far
-            to_update = (r_frac_2 < part_halo_r_frac_2[idx]) | (part_halo_r_frac_2[idx] < 0.0)
+            to_update = (r_frac_2 < part_halo_r_frac_2[idx])
         elif overlap_method == MOST_MASSIVE:
             # Assign particles to this halo if this is the most massive halo the particle
             # has been found to be in so far
-            to_update = halo_mass[i] > part_halo_mass[idx]
+            to_update = (halo_mass[i] > part_halo_mass[idx])
         elif overlap_method == LEAST_MASSIVE:
             # Assign particles to this halo if this is the least massive halo the particle
             # has been found to be in so far
-            to_update = (halo_mass[i] < part_halo_mass[idx]) | (part_halo_mass[idx] < 0.0)
+            to_update = (halo_mass[i] < part_halo_mass[idx])
         else:
             raise ValueError("Unrecognized value of overlap_method")        
         idx = idx[to_update]
@@ -409,6 +416,9 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part
     part_halo_r_frac = np.where(in_halo, np.sqrt(part_halo_r_frac_2), -1.0)
     del part_halo_r_frac_2
 
+    # Replace any huge halo masses (i.e. particles not in any halo) with -1
+    part_halo_mass[in_halo==False] = -1.0
+
     # Restore original particle ordering and return halo IDs etc
     message("Restoring particle order")
     order = psort.parallel_sort(part_index, return_index=True, comm=comm)
@@ -424,7 +434,9 @@ def main(args):
 
     # Determine method to deal with overlapping halos
     overlap_method = overlap_methods[args.overlap_method]
-    
+    message(f"Halo overlap method: {args.overlap_method}")
+    message(f"Halo radius definition: {args.soap_so_name}")
+
     # Read in position and radius for halos in the lightcone
     radius_name = f"{args.soap_so_name}/SORadius"
     mass_name = f"{args.soap_so_name}/TotalMass"
