@@ -259,9 +259,9 @@ class LightconeSorter:
             infile.copy("InternalCodeUnits", outfile)
             infile.copy("Lightcone", outfile)
             # Update some quantities
-            outfile["Lightcone"].attrs["file_index"] = 0
-            outfile["Lightcone"].attrs["mpi_rank"] = comm_rank
-            outfile["Lightcone"].attrs["nr_mpi_ranks"] = comm_size
+            outfile["Lightcone"].attrs["file_index"] = (0,)
+            outfile["Lightcone"].attrs["mpi_rank"] = (comm_rank,)
+            outfile["Lightcone"].attrs["nr_mpi_ranks"] = (comm_size,)
             del outfile["Lightcone"].attrs["expansion_factor"]
 
         # Loop over particle types
@@ -340,7 +340,7 @@ class LightconeSorter:
                 gc.collect()
 
                 # Update particle number for this type
-                outfile["Lightcone"].attrs["cumulative_count_"+ptype] = local_nr_particles[comm_rank]
+                outfile["Lightcone"].attrs["cumulative_count_"+ptype] = (local_nr_particles[comm_rank],)
 
                 # Write out binning information for this output
                 cells = outfile["Cells"].create_group(ptype)
