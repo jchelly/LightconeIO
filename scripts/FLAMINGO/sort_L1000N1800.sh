@@ -9,14 +9,18 @@
 #SBATCH -t 72:00:00
 #
 
+# Load modules
 module purge
-module load python/3.10.1
-module load gnu_comp/11.1.0
-module load openmpi/4.1.1
-
+module load python/3.12.4 gnu_comp/14.1.0 openmpi/5.0.3
 export OPENBLAS_NUM_THREADS=1
 
+# Activate virtual env with lightcone_io installed
+source /cosma/apps/dp004/${USER}/lightcone_env/bin/activate
+
+# Job name indicates simulation to process
 name=${SLURM_JOB_NAME}
+
+# Job array index indicates lightcone number to do
 lightcone_nr=${SLURM_ARRAY_TASK_ID}
 
 # Input lightcone
@@ -42,9 +46,7 @@ outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/${name}/particle_l
 \mkdir -p ${outdir}
 lfs setstripe --stripe-count=-1 --stripe-size=32M ${outdir}
 
-# Assume script is in $PATH
-script=`which lightcone_io_index_particles.py`
-
-mpirun python3 -u -m mpi4py ${script} \
+# Run the code
+mpirun python3 -u -m mpi4py -m lightcone_io.index_particles \
     ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${order} \
     ${redshift_first} ${outdir} ${lossy} ${chunksize}
