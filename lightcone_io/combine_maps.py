@@ -46,8 +46,8 @@ def combine_maps_mpi(indir, outdir, basenames):
                 indexfile["Lightcone"].attrs["nr_files_per_shell"] = [1,]
 
 
-if __name__ == "__main__":
-    
+def main():
+                
     usage="""
     Usage: python3 -m mpi4py lightcone_io_combine_maps.py \\
               basedir outdir basename1 basename2 ...

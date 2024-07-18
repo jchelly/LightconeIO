@@ -4,7 +4,7 @@ import sys
 
 import lightcone_io.healpix_maps as hm
 
-if __name__ == "__main__":
+def main():
 
     usage="""
     python3 ./lightcone_io_compare_maps.py indir1 indir2 lightcone_nr shell_nr

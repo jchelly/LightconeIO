@@ -98,8 +98,9 @@ def downsample_maps(input_basedir, output_basedir, basename, shell_nr, new_nside
     outfile.close()
     infile.close()
 
-if __name__ == "__main__":
-
+    
+def main():
+    
     usage = """
     Usage:
 

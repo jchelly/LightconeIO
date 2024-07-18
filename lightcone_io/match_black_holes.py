@@ -639,7 +639,7 @@ def test_choose_bh_tracers():
     message("Done.")
 
 
-def run():
+def main():
 
     parser = MPIArgumentParser(comm, description='Create lightcone halo catalogues.')
     parser.add_argument('tree_filename',  help='Location of merger tree file')
@@ -651,8 +651,3 @@ def run():
     args = parser.parse_args()
     match_black_holes(args)
 
-
-if __name__ == "__main__":
-
-    #test_choose_bh_tracers()
-    run()

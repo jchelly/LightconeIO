@@ -571,9 +571,8 @@ def main(args):
                          attrs={dataset_name : halo_lightcone_data[prop_name].attrs},
                          gzip=6, shuffle=True)
 
+def main():
     
-if __name__ == "__main__":
-
     # Get command line arguments
     from virgo.mpi.util import MPIArgumentParser
     parser = MPIArgumentParser(description='Create lightcone halo catalogues.', comm=comm)

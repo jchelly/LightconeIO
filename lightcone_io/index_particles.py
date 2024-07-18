@@ -8,7 +8,8 @@ comm_rank = comm.Get_rank()
 
 from lightcone_io.particle_sorter import LightconeSorter
 
-if __name__ == "__main__":
+
+def main():
 
     usage="""
     Usage: python3 -m mpi4py lightcone_io_index_particles.py \\

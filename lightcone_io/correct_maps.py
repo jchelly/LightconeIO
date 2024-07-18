@@ -208,8 +208,8 @@ def correct_maps_mpi(indir, yml_file, outdir, snapfile, basenames):
             results = list(executor.starmap(correct_shell_file, args))
 
 
-if __name__ == "__main__":
-    
+def main():
+            
     usage="""
     Usage: python3 -m mpi4py lightcone_io_correct_maps.py \\
               basedir shell_redshifts outdir basename1 basename2 ...
