@@ -20,7 +20,7 @@ python -m pip cache purge
 WHEEL_DIR=/cosma/apps/dp004/jch/python/wheels/python3.12.4/openmpi-${ompi_version}-hdf5-${hdf5_version}
 
 # Name of the new venv to create
-venv_name="lightcone_env"
+venv_name="/cosma/apps/dp004/${USER}/lightcone_env"
 
 # Create an empty venv
 python -m venv "${venv_name}"
@@ -31,3 +31,7 @@ source "${venv_name}"/bin/activate
 # Install modules with tricky dependencies from locally built wheels
 pip install ${WHEEL_DIR}/mpi4py-3.1.6-cp312-cp312-linux_x86_64.whl
 pip install ${WHEEL_DIR}/h5py-3.11.0-cp312-cp312-linux_x86_64.whl
+
+# Install lightcone I/O to the venv in editable mode
+cd ../..
+pip3 install -e .
