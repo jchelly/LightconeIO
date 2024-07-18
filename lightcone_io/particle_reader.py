@@ -509,13 +509,13 @@ class IndexedLightcone(collections.abc.Mapping):
 
                 # Find names of all of the lightcone files
                 filenames = []
-                for i in range(metadata["nr_mpi_ranks"]):
+                for i in range(int(metadata["nr_mpi_ranks"])):
                     filenames.append("%s.%d.hdf5" % (basename, i))
 
                 # Find names of extra files
                 if extra_filename is not None:
                     extra_filenames = []
-                    for i in range(metadata["nr_mpi_ranks"]):
+                    for i in range(int(metadata["nr_mpi_ranks"])):
                         extra_filenames.append("%s.%d.hdf5" % (extra_basename, i))
                 else:
                     extra_filenames = None
