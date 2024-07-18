@@ -244,7 +244,7 @@ class LightconeSorter:
                 shutil.copyfile(self.metadata.index_file_name(), new_index_file_name)
             # Update number of files: will write one file per MPI rank
             with h5py.File(new_index_file_name, "r+") as new_index_file:
-                new_index_file["Lightcone"].attrs["nr_mpi_ranks"] = comm_size
+                new_index_file["Lightcone"].attrs["nr_mpi_ranks"] = (comm_size,)
                 new_index_file["Lightcone"].attrs["final_particle_file_on_rank"] = np.zeros(comm_size, dtype=int)
 
         self.message("Creating output file")
