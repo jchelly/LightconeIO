@@ -151,16 +151,16 @@ The code above can read SWIFT HEALPix output regardless of how many files it
 is split over. However, it may be desirable to reduce the number of files if
 they're stored on a file system optimized for small numbers of large files.
 
-The script bin/lightcone_io_combine_maps.py can be used to combine the maps 
-for each shell into a single HDF5 file. This script is parallelized using 
-mpi4py and can be run as follows:
+The module lightcone_io.combine_maps can be used to combine the maps for each
+shell into a single HDF5 file. This code is parallelized using mpi4py and can
+be run as follows:
 
 ```
 input_dir=./lightcones/
 output_dir=./indexed_lightcones/
 
-mpirun python3 -m mpi4py \
-    lightcone_io_combine_maps.py ${input_dir} ${output_dir} lightcone0 lightcone1 ...  
+mpirun python3 -m mpi4py -m lightcone_io.combine_maps.py \
+       ${input_dir} ${output_dir} lightcone0 lightcone1 ...  
 ```
 
 This will process all shells for the specified lightcones.
@@ -171,7 +171,7 @@ COSMA-8 in scripts/FLAMINGO/combine_L1000N1800.sh.
 ## Indexing particle outputs
 
 SWIFT lightcone particle outputs are spread over many files and not sorted
-in any useful order. The script bin/lightcone_io_index_particles.py can be
+in any useful order. The module lightcone_io.index_particles can be
 used to sort the particles and generate an index which can be used to
 quickly retrieve particles by redshift and position on the sky.
 
@@ -183,7 +183,7 @@ cell they belong to and the location of each cell in the output files is
 stored. This information is used by the lightcone_io.particle_reader module
 to extract requested particles.
 
-The script is parallelized with mpi4py and can be run as follows:
+The code is parallelized with mpi4py and can be run as follows:
 ```
 # Location of the input lightcones
 basedir="./lightcones/"
@@ -204,7 +204,7 @@ order="nest"
 # or first by redshift then by pixel (1)
 redshift_first=1
 
-mpirun python3 -m mpi4py lightcone_io_index_particles.py \
+mpirun python3 -m mpi4py -m lightcone_io.index_particles \
               ${basedir} ${basename} ${nr_redshift_bins} ${nside} \
               ${order} ${redshift_first} ${outdir}
 ```
@@ -256,10 +256,7 @@ soap_filenames="/cosma8/data/dp004/flamingo/Runs/L1000N1800/HYDRO_FIDUCIAL/SOAP/
 # Directory to write the output to
 output_dir="/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcone_particle_halo_ids/lightcone${lightcone_nr}/"
 
-# Assume we're running from scripts/FLAMINGO in the source directory
-script=../../bin/lightcone_io_particle_halo_ids.py 
-
-mpirun python3 -m mpi4py ${script} \
+mpirun python3 -m mpi4py -m lightcone_io.particle_halo_ids \
     "${lightcone_dir}" \
     "${lightcone_base}" \
     "${halo_lightcone_filenames}" \
