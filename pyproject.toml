@@ -15,6 +15,7 @@ dependencies = [
     "numpy",
     "mpi4py",
     "unyt",
+    "healpy",
 ]
 
 [tool.setuptools]
