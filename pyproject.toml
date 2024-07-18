@@ -20,12 +20,3 @@ dependencies = [
 
 [tool.setuptools]
 packages = ["lightcone_io",]
-
-[project.scripts]
-lightcone_io_combine_maps = "lightcone_io.combine_maps:main"
-lightcone_io_compare_maps = "lightcone_io.compare_maps:main"
-lightcone_io_correct_maps = "lightcone_io.correct_maps:main"
-lightcone_io_downsample_maps = "lightcone_io.downsample_maps:main"
-lightcone_io_match_black_holes = "lightcone_io.match_black_holes:main"
-lightcone_io_index_particles = "lightcone_io.index_particles:main"
-lightcone_io_particle_halo_ids = "lightcone_io.particle_halo_ids:main"
