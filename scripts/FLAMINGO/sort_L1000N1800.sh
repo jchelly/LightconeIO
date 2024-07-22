@@ -6,13 +6,14 @@
 #SBATCH -o ./logs/L1000N1800/index_%x.lightcone%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
-#SBATCH -t 72:00:00
+#SBATCH -t 12:00:00
 #
 
 # Load modules
 module purge
 module load python/3.12.4 gnu_comp/14.1.0 openmpi/5.0.3
 export OPENBLAS_NUM_THREADS=1
+export HDF5_USE_FILE_LOCKING=FALSE
 
 # Activate virtual env with lightcone_io installed
 source /cosma/apps/dp004/${USER}/lightcone_env/bin/activate
@@ -38,15 +39,12 @@ order="nest"
 lossy=1
 chunksize=1048576
 
-# Whether to sort by redshift first then pixel (1) or pixel first then redshift (0)
-redshift_first=1
-
 # Output directory
 outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/${name}/particle_lightcones/
 \mkdir -p ${outdir}
 lfs setstripe --stripe-count=-1 --stripe-size=32M ${outdir}
 
 # Run the code
-mpirun python3 -u -m mpi4py -m lightcone_io.index_particles \
-    ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${order} \
-    ${redshift_first} ${outdir} ${lossy} ${chunksize}
+mpirun -- python3 -u -m mpi4py -m lightcone_io.index_particles \
+       ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${outdir} \
+       --order ${order} --redshift-first --lossy --chunksize=${chunksize}
