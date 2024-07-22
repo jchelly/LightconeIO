@@ -27,7 +27,7 @@ class LightconeSorter:
         if self.comm.Get_rank()==0:
             print(message)
 
-    def __init__(self, basedir, basename, comm):
+    def __init__(self, basedir, basename, comm, types=None):
         
         self.comm = comm
         comm_size = comm.Get_size()
@@ -44,7 +44,7 @@ class LightconeSorter:
         self.particle_offset = {}
         self.particle_count = {}
         for ptype in self.metadata.part_types:
-            if self.metadata.nr_particles_total[ptype] > 0:
+            if self.metadata.nr_particles_total[ptype] > 0 or (types is not None and ptype in types):
                 nr_per_rank = self.metadata.nr_particles_total[ptype] // comm_size
                 if nr_per_rank < 1:
                     raise Exception("Must have at least one particle per MPI rank!")
