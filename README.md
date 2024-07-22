@@ -159,7 +159,7 @@ be run as follows:
 input_dir=./lightcones/
 output_dir=./indexed_lightcones/
 
-mpirun python3 -m mpi4py -m lightcone_io.combine_maps.py \
+mpirun python3 -m mpi4py -m lightcone_io.combine_maps \
        ${input_dir} ${output_dir} lightcone0 lightcone1 ...  
 ```
 
