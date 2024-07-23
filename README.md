@@ -243,19 +243,12 @@ nside=32
 # HEALPix pixel ordering scheme
 order="nest"
 
-# Whether to sort first by pixel and then by redshift (0)
-# or first by redshift then by pixel (1)
-redshift_first=1
-
 mpirun python3 -m mpi4py -m lightcone_io.index_particles \
               ${basedir} ${basename} ${nr_redshift_bins} ${nside} \
-              ${order} ${redshift_first} ${outdir}
+              ${outdir} --order ${order} --redshift-first
 ```
 There is an example SLURM batch script to run on the FLAMINGO simulations on
 COSMA-8 in scripts/FLAMINGO/sort_L1000N1800.sh.
-
-Note that this script requires the virgo python module from
-https://github.com/jchelly/VirgoDC .
 
 ## Computing halo membership in particle lightcones
 
