@@ -4,10 +4,53 @@ This is a python module for reading lightcone output from SWIFT simulations.
 
 ## Installation
 
-The module can be installed to the user's home directory by running the
-following in the source directory:
+### Installing in a virtual env on Cosma
+
+The bash script in `lightcone_io/scripts/virtual_env/make_cosma_env_python3.12.4.sh`
+will create a new virtual environment in `/cosma/apps/dp004/${USER}/lightcone_env`
+and install the necessary dependencies. If you intend to make any changes to the
+lightcone_io module you can then install it in editable mode by activating the venv
+and running
 ```
-pip install --user .
+pip install -e .
+```
+in the source directory. You should then be able to `import lightcone_io` in
+python.
+
+### Installing elsewhere
+
+lightcone_io requires mpi4py and h5py with MPI support, which means that h5py
+must be built from source and linked to a libhdf5 which uses the same MPI
+installation as mpi4py.
+
+To install mpi4py, ensure that the mpicc from the MPI installation you want
+to use is in your $PATH and run `pip install mpi4py`.
+
+To install h5py, assuming that we're using the bash shell:
+```
+export CC="`which mpicc`"
+export HDF5_MPI="ON"
+export HDF5_DIR=<path to mpi enabled hdf5 installation>
+pip install setuptools cython numpy pkgconfig
+pip wheel --no-binary h5py --no-build-isolation h5py
+```
+The HDF5_DIR path should contain HDF5's lib and include directories. You can
+then run
+```
+pip install -e .
+```
+in the lightcone_io source directory to install the module.
+
+## Replacement of scripts with runnable modules
+
+Earlier versions on lightcone_io installed executable scripts such as
+lightcone_io_index_particles.py to the python environment's bin directory and
+relied on $PATH being set correctly to find the scripts.
+
+These scripts have been replaced with modules which can be run with commands
+such as
+```
+mpirun -np 8 python3 -m mpi4py -m lightcone_io.index_particles <parameters>
 ```
 
 ## Reading lightcone HEALPix maps
