@@ -32,7 +32,7 @@ export CC="`which mpicc`"
 export HDF5_MPI="ON"
 export HDF5_DIR=<path to mpi enabled hdf5 installation>
 pip install setuptools cython numpy pkgconfig
-pip wheel --no-binary h5py --no-build-isolation h5py
+pip install --no-binary h5py --no-build-isolation h5py
 ```
 The HDF5_DIR path should contain HDF5's lib and include directories. You can
 then run
