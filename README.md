@@ -4,10 +4,53 @@ This is a python module for reading lightcone output from SWIFT simulations.
 
 ## Installation
 
-The module can be installed to the user's home directory by running the
-following in the source directory:
+### Installing in a virtual env on Cosma
+
+The bash script in `lightcone_io/scripts/virtual_env/make_cosma_env_python3.12.4.sh`
+will create a new virtual environment in `/cosma/apps/dp004/${USER}/lightcone_env`
+and install the necessary dependencies. If you intend to make any changes to the
+lightcone_io module you can then install it in editable mode by activating the venv
+and running
 ```
-pip install --user .
+pip install -e .
+```
+in the source directory. You should then be able to `import lightcone_io` in
+python.
+
+### Installing elsewhere
+
+lightcone_io requires mpi4py and h5py with MPI support, which means that h5py
+must be built from source and linked to a libhdf5 which uses the same MPI
+installation as mpi4py.
+
+To install mpi4py, ensure that the mpicc from the MPI installation you want
+to use is in your $PATH and run `pip install mpi4py`.
+
+To install h5py, assuming that we're using the bash shell:
+```
+export CC="`which mpicc`"
+export HDF5_MPI="ON"
+export HDF5_DIR=<path to mpi enabled hdf5 installation>
+pip install setuptools cython numpy pkgconfig
+pip install --no-binary h5py --no-build-isolation h5py
+```
+The HDF5_DIR path should contain HDF5's lib and include directories. You can
+then run
+```
+pip install -e .
+```
+in the lightcone_io source directory to install the module.
+
+## Replacement of scripts with runnable modules
+
+Earlier versions on lightcone_io installed executable scripts such as
+lightcone_io_index_particles.py to the python environment's bin directory and
+relied on $PATH being set correctly to find the scripts.
+
+These scripts have been replaced with modules which can be run with commands
+such as
+```
+mpirun -np 8 python3 -m mpi4py -m lightcone_io.index_particles <parameters>
 ```
 
 ## Reading lightcone HEALPix maps
@@ -151,16 +194,16 @@ The code above can read SWIFT HEALPix output regardless of how many files it
 is split over. However, it may be desirable to reduce the number of files if
 they're stored on a file system optimized for small numbers of large files.
 
-The script bin/lightcone_io_combine_maps.py can be used to combine the maps 
-for each shell into a single HDF5 file. This script is parallelized using 
-mpi4py and can be run as follows:
+The module lightcone_io.combine_maps can be used to combine the maps for each
+shell into a single HDF5 file. This code is parallelized using mpi4py and can
+be run as follows:
 
 ```
 input_dir=./lightcones/
 output_dir=./indexed_lightcones/
 
-mpirun python3 -m mpi4py \
-    lightcone_io_combine_maps.py ${input_dir} ${output_dir} lightcone0 lightcone1 ...  
+mpirun python3 -m mpi4py -m lightcone_io.combine_maps \
+       ${input_dir} ${output_dir} lightcone0 lightcone1 ...  
 ```
 
 This will process all shells for the specified lightcones.
@@ -171,7 +214,7 @@ COSMA-8 in scripts/FLAMINGO/combine_L1000N1800.sh.
 ## Indexing particle outputs
 
 SWIFT lightcone particle outputs are spread over many files and not sorted
-in any useful order. The script bin/lightcone_io_index_particles.py can be
+in any useful order. The module lightcone_io.index_particles can be
 used to sort the particles and generate an index which can be used to
 quickly retrieve particles by redshift and position on the sky.
 
@@ -183,7 +226,7 @@ cell they belong to and the location of each cell in the output files is
 stored. This information is used by the lightcone_io.particle_reader module
 to extract requested particles.
 
-The script is parallelized with mpi4py and can be run as follows:
+The code is parallelized with mpi4py and can be run as follows:
 ```
 # Location of the input lightcones
 basedir="./lightcones/"
@@ -200,19 +243,12 @@ nside=32
 # HEALPix pixel ordering scheme
 order="nest"
 
-# Whether to sort first by pixel and then by redshift (0)
-# or first by redshift then by pixel (1)
-redshift_first=1
-
-mpirun python3 -m mpi4py lightcone_io_index_particles.py \
+mpirun python3 -m mpi4py -m lightcone_io.index_particles \
               ${basedir} ${basename} ${nr_redshift_bins} ${nside} \
-              ${order} ${redshift_first} ${outdir}
+              ${outdir} --order ${order} --redshift-first
 ```
 There is an example SLURM batch script to run on the FLAMINGO simulations on
 COSMA-8 in scripts/FLAMINGO/sort_L1000N1800.sh.
-
-Note that this script requires the virgo python module from
-https://github.com/jchelly/VirgoDC .
 
 ## Computing halo membership in particle lightcones
 
@@ -256,10 +292,7 @@ soap_filenames="/cosma8/data/dp004/flamingo/Runs/L1000N1800/HYDRO_FIDUCIAL/SOAP/
 # Directory to write the output to
 output_dir="/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/lightcone_particle_halo_ids/lightcone${lightcone_nr}/"
 
-# Assume we're running from scripts/FLAMINGO in the source directory
-script=../../bin/lightcone_io_particle_halo_ids.py 
-
-mpirun python3 -m mpi4py ${script} \
+mpirun python3 -m mpi4py -m lightcone_io.particle_halo_ids \
     "${lightcone_dir}" \
     "${lightcone_base}" \
     "${halo_lightcone_filenames}" \

@@ -27,7 +27,7 @@ class LightconeSorter:
         if self.comm.Get_rank()==0:
             print(message)
 
-    def __init__(self, basedir, basename, comm):
+    def __init__(self, basedir, basename, comm, types=None):
         
         self.comm = comm
         comm_size = comm.Get_size()
@@ -44,7 +44,7 @@ class LightconeSorter:
         self.particle_offset = {}
         self.particle_count = {}
         for ptype in self.metadata.part_types:
-            if self.metadata.nr_particles_total[ptype] > 0:
+            if self.metadata.nr_particles_total[ptype] > 0 and (types is None or ptype in types):
                 nr_per_rank = self.metadata.nr_particles_total[ptype] // comm_size
                 if nr_per_rank < 1:
                     raise Exception("Must have at least one particle per MPI rank!")
@@ -250,7 +250,7 @@ class LightconeSorter:
         self.message("Creating output file")
         new_particle_file_name = self.metadata.particle_file_name(comm_rank, 0, new_basedir)
         os.makedirs(os.path.dirname(new_particle_file_name), exist_ok=True)
-        outfile = h5py.File(new_particle_file_name, "w")
+        outfile = h5py.File(new_particle_file_name, "w", libver=("v108", "latest"))
         outfile.create_group("Cells")
 
         with h5py.File(self.metadata.filenames[0], "r") as infile:
@@ -267,9 +267,10 @@ class LightconeSorter:
         # Loop over particle types
         for ptype in self.metadata.part_types:
 
-            if self.particle_count[ptype] > 0:
+            total_count = self.comm.allreduce(self.particle_count[ptype])
+            if total_count > 0:
 
-                self.message("Particle type %s" % ptype)
+                self.message("Particle type %s (%d particles)" % (ptype, total_count))
                 outfile.create_group(ptype)
                 
                 # Get sorting order and bins for this type

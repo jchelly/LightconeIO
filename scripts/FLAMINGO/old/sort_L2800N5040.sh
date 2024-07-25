@@ -10,17 +10,14 @@
 #
 
 module purge
-module load python/3.12.4 gnu_comp/14.1.0 openmpi/5.0.3
+module load python/3.10.1
+module load gnu_comp/11.1.0
+module load openmpi/4.1.1
+
 export OPENBLAS_NUM_THREADS=1
 export HDF5_USE_FILE_LOCKING=FALSE
 
-# Activate virtual env with lightcone_io installed
-source /cosma/apps/dp004/${USER}/lightcone_env/bin/activate
-
-# Job name indicates simulation to process
 name=${SLURM_JOB_NAME}
-
-# Job array index indicates lightcone number to do
 lightcone_nr=${SLURM_ARRAY_TASK_ID}
 
 # Input lightcone
@@ -34,16 +31,14 @@ nr_redshift_bins=64
 nside=16
 order="nest"
 
-# Storage parameters
-lossy=1
-chunksize=1048576
+# Whether to sort by redshift first then pixel (1) or pixel first then redshift (0)
+redshift_first=1
 
 # Output directory
 outdir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/L2800N5040/${name}/indexed_lightcones/
-\mkdir -p ${outdir}
-lfs setstripe --stripe-count=-1 --stripe-size=32M ${outdir}
 
-# Run the code
-mpirun -- python3 -u -m mpi4py -m lightcone_io.index_particles \
-       ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${outdir} \
-       --order ${order} --redshift-first --lossy --chunksize=${chunksize}
+# Assume script is in $PATH
+script=`which lightcone_io_index_particles.py`
+
+mpirun python3 -u -m mpi4py ${script} \
+    ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${order} ${redshift_first} ${outdir}
