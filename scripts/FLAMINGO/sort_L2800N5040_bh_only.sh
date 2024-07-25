@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #
-#SBATCH --nodes=50
-#SBATCH --tasks-per-node=64
+#SBATCH --nodes=4
+#SBATCH --tasks-per-node=128
 #SBATCH --cpus-per-task=1
 #SBATCH -o ./logs/L2800N5040/index_%x.lightcone%a.out
 #SBATCH -p cosma8
@@ -35,11 +35,10 @@ nside=16
 order="nest"
 
 # Storage parameters
-lossy=1
 chunksize=1048576
 
 # Output directory
-outdir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/L2800N5040/${name}/particle_lightcones_gas/
+outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L2800N5040/${name}/black_hole_lightcones/
 \mkdir -p ${outdir}
 lfs setstripe --stripe-count=-1 --stripe-size=32M ${outdir}
 
@@ -47,4 +46,4 @@ lfs setstripe --stripe-count=-1 --stripe-size=32M ${outdir}
 mpirun -- python3 -u -m mpi4py -m lightcone_io.index_particles \
        ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${outdir} \
        --order ${order} --redshift-first --lossy --chunksize=${chunksize} \
-       --types="Gas"
+       --types="BH"
