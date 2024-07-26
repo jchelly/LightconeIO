@@ -28,6 +28,7 @@ class HaloCatalogue:
         self.first_snap = first_snap
         self.last_snap = last_snap
         self.halo_format = halo_format
+        self.description = {}
         
     def read(self, snap_nr, to_read):
         """
@@ -49,6 +50,11 @@ class HaloCatalogue:
         mf = phdf5.MultiFile(filename, file_idx=(0,), comm=comm)
         data = mf.read(to_read, read_attributes=True)
 
+        # Store descriptions
+        for name in data:
+            if "Description" in data[name].attrs:
+                self.description[name] = data[name].attrs["Description"]
+        
         # Convert to unyt arrays
         for name in data:
             units = swift.soap_units_from_attributes(data[name].attrs, reg)

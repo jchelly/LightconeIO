@@ -225,7 +225,7 @@ def match_black_holes(args):
         halo_slice["Lightcone/snap_nr"] = unyt.unyt_array(snap_nr_arr, dtype=int, units="dimensionless", registry=registry)
         
         message(f"  Computed potential minimum position in lightcone")
-
+        
         # Write out the halo catalogue for this snapshot
         output_filename = f"{args.output_dir}/lightcone_halos_{snap_nr:04d}.hdf5"
         outfile = h5py.File(output_filename, "w", driver="mpio", comm=comm, libver="v108")
@@ -238,6 +238,10 @@ def match_black_holes(args):
             attrs = attributes_from_units(halo_slice[name].units)
             for attr_name, attr_val in attrs.items():
                 dset.attrs[attr_name] = attr_val
+            # Write description
+            if name in halo_cat.description:
+                dset.attrs["Description"] = halo_cat.description[name]
+                
         # Correct a-exponent of the lightcone positions (they're comoving)
         outfile["Lightcone/cofp"].attrs["a-scale exponent"] = (1.0,)
         outfile.close()
