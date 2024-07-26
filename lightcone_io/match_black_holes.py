@@ -67,7 +67,7 @@ def match_black_holes(args):
     # Loop over snapshots
     halos_so_far = 0
     membership_cache = {}
-    for snap_nr in range(args.first_snap, args.last_snap+1):
+    for snap_nr in range(args.last_snap, args.first_snap-1, -1):
 
         # Read halos at this snapshot
         halo_data = halo_cat.read(snap_nr)
@@ -81,7 +81,7 @@ def match_black_holes(args):
         # Returns ID and position of the selected BH particle.
         message(f"  Choosing tracer particles for snapshot {snap_nr}")
         tracer_id, tracer_pos = ct.choose_bh_tracer(halo_data["InputHalos/index"],
-                                                    snap_nr, args.last_Snap, args.snapshot_format,
+                                                    snap_nr, args.last_snap, args.snapshot_format,
                                                     args.membership_format, membership_cache)
         tracer_pos = drop_a_from_comoving_length(tracer_pos)
         
@@ -89,13 +89,13 @@ def match_black_holes(args):
         # (range is truncated for the first and last snapshots)
         z_snap = halo_cat.redshift[snap_nr]        
         if snap_nr == args.first_snap:
-            z1 = halo_cat.redshift[args.first_snap]
+            z2 = halo_cat.redshift[args.first_snap]
         else:
-            z1 = 0.5*(halo_cat.redshift[snap_nr-1]+halo_cat.redshift[snap_nr])
+            z2 = 0.5*(halo_cat.redshift[snap_nr-1]+halo_cat.redshift[snap_nr])
         if snap_nr == args.last_snap:
-            z2 = halo_cat.redshift[args.last_snap]
+            z1 = halo_cat.redshift[args.last_snap]
         else:
-            z2 = 0.5*(halo_cat.redshift[snap_nr]+halo_cat.redshift[snap_nr+1])
+            z1 = 0.5*(halo_cat.redshift[snap_nr]+halo_cat.redshift[snap_nr+1])
 
         message(f"  Using {nr_halos_in_slice_all} halos at z={z_snap:.3f} to populate range z={z1:.3f} to z={z2:.3f}")
 
@@ -110,9 +110,9 @@ def match_black_holes(args):
 
         # Try to match BH particles to the halo most bound BH IDs.
         # There may be multiple particles matching each halo due to the periodicity of the box.
-        # Since halos with no black hole have id_tracer_bh=NULL_BH_ID and this value never appears
+        # Since halos with no black hole have tracer_id=NULL_BH_ID and this value never appears
         # in the particle data, every match will become a halo in the output catalogue.
-        halo_index = psort.parallel_match(particle_data["ParticleIDs"], id_tracer_bh, comm=comm)
+        halo_index = psort.parallel_match(particle_data["ParticleIDs"], tracer_id, comm=comm)
         matched = halo_index>=0
         nr_matched = np.sum(matched)
         nr_matched_all = comm.allreduce(nr_matched)
@@ -143,12 +143,13 @@ def match_black_holes(args):
         length_unit = unyt.Unit("snap_length", registry=tracer_pos.units.registry)
         boxsize = boxsize_no_units * length_unit
         
-        # Position of the matched BH particle in the lightcone particle output
+        # Position of the matched BH particle in the lightcone particle output.
+        # Has one entry for each BH in the lightcone which matched a halo.
         bh_pos_in_lightcone = particle_data["Coordinates"][matched,...].to(length_unit)
 
-        # Position of the selected tracer BH, taken from the snapshot
-        bh_pos_in_snapshot = tracer_pos[matched,...].to(length_unit)
-        
+        # Position of the selected tracer BH, taken from the snapshot.
+        bh_pos_in_snapshot = psort.fetch_elements(tracer_pos, halo_index, comm=comm).to(length_unit)
+                
         # Position of the matched halo from the halo finder
         halo_pos_in_snapshot = halo_slice["InputHalos/cofp"].to(length_unit)
 
@@ -160,7 +161,7 @@ def match_black_holes(args):
         halo_pos_in_lightcone = bh_pos_in_lightcone + bh_to_minpot_vector
 
         # Report largest offset between BH and potential minimum
-        max_offset = distributed_amax(bh_to_minpot_vector.flatten(), comm)
+        max_offset = ct.distributed_amax(bh_to_minpot_vector.flatten(), comm)
         if comm_rank == 0 and max_offset is not None:
             message(f"  Maximum minpot/bh offset = {max_offset} (SWIFT length units, comoving)")
 
@@ -171,7 +172,7 @@ def match_black_holes(args):
         message(f"  Computed potential minimum position in lightcone")
 
         # Write out the halo catalogue for this snapshot
-        output_filename = f"{args.output_dir}/lightcone_halos_{redshift_nr:04d}.hdf5"
+        output_filename = f"{args.output_dir}/lightcone_halos_{snap_nr:04d}.hdf5"
         outfile = h5py.File(output_filename, "w", driver="mpio", comm=comm)
         for name in halo_slice:
             # Ensure the group exists
@@ -192,8 +193,8 @@ def run():
 
     parser = MPIArgumentParser(comm, description='Create lightcone halo catalogues.')
     parser.add_argument('halo_format', help='Format string for halo catalogue filenames (using {snap_nr}, {file_nr})')
-    parser.add_argument('first_snap', help='Index of the first snapshot to use')
-    parser.add_argument('last_snap', help='Index of the last snapshot to use')
+    parser.add_argument('first_snap', type=int, help='Index of the first snapshot to use')
+    parser.add_argument('last_snap', type=int, help='Index of the last snapshot to use')
     parser.add_argument('lightcone_dir',  help='Directory with lightcone particle outputs')
     parser.add_argument('lightcone_base', help='Base name of the lightcone to use')
     parser.add_argument('snapshot_format',  help='Format string for snapshot filenames (e.g. "snap_{snap_nr:04d}.{file_nr}.hdf5")')
