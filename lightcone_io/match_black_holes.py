@@ -6,12 +6,16 @@ import numpy as np
 import h5py
 import argparse
 from mpi4py import MPI
+import unyt
 
 import virgo.util.match as match
 import virgo.mpi.parallel_hdf5 as phdf5
 import virgo.mpi.parallel_sort as psort
 from virgo.mpi.util import MPIArgumentParser
+
 import lightcone_io.particle_reader as pr
+import lightcone_io.halo_catalogue as hc
+import lightcone_io.choose_bh_tracer as ct
 
 comm = MPI.COMM_WORLD
 comm_rank = comm.Get_rank()
@@ -26,218 +30,19 @@ def message(m):
         print(m)
 
 
-def distributed_amax(arr, comm):
+def drop_a_from_comoving_length(arr):
     """
-    Find maximum over distributed array arr, bearing in mind that some
-    MPI ranks might have zero elements.
+    Convert an array of lengths to comoving snapshot length units and drop
+    the a factor from the units without changing the value.
 
-    Returns None if all ranks have no elements.
+    Coordinates in the lightcone are comoving but the expansion factor varies
+    so we can't include it explicitly in the units as we might in snapshots.
+    Here we convert to units a*snap_length and reinterpret the numbers as
+    just snap_length.
     """
-    if len(arr) == 0:
-        local_max = None
-    else:
-        local_max = np.amax(arr)
-    all_max = comm.allgather(local_max)
-    global_max = None
-    for m in all_max:
-        if m is not None:
-            if global_max is None:
-                global_max = m
-            elif m > global_max:
-                global_max = m
-    return global_max
-
-
-def choose_bh_tracer(subhalo_id, snap_nr, final_snap_nr, snapshot_format,
-                     membership_format, membership_cache):
-    """
-    Find the ID of a suitable tracer particle for each subhalo
-    Ideally we want to pick a black hole that exists at the next
-    and previous snapshots.
-
-    subhalo_id: array of subhalo IDs at snapshot snap_nr
-    snap_nr: snapshot at which the subhalos exist
-    final_snap_nr: final snapshot number in the simulation
-    snapshot_format: format string for snapshot filenames
-    membership_format: format string for group membership filenames
-    membership_cache: stores previously read BH halo membership
-    """
-
-    # Ensure we have the BH IDs and halo membership for snapshots snap_nr-1,
-    # snap_nr and snap_nr+1 (may be in membership_cache already)
-    for sn in (snap_nr+1, snap_nr, snap_nr-1):
-        if (sn >= 0) and (sn <= final_snap_nr) and (sn not in membership_cache):
-
-            # Discard excess cache entries
-            while len(membership_cache) > 2:
-                max_snap_in_cache = max(membership_cache.keys())
-                del membership_cache[max_snap_in_cache]
-
-            # Read in the black hole particle IDs for this snapshot
-            filenames = (snapshot_format % {"snap_nr" : sn}) + ".%(file_nr)d.hdf5"
-            mf1 = phdf5.MultiFile(filenames, file_nr_attr=("Header","NumFilesPerSnapshot"), comm=comm)
-            snap_bh_ids, snap_bh_pos = mf1.read(("PartType5/ParticleIDs", "PartType5/Coordinates"), unpack=True)
-            
-            # Check for the case where there are no BHs at this snapshot: MultiFile.read()
-            # returns None if no ranks read any elements.
-            if snap_bh_ids is None:
-                membership_cache[sn] = None
-                continue
-
-            # Read in the black hole particle halo membership
-            filenames = (membership_format % {"snap_nr" : sn}) + ".%(file_nr)d.hdf5"
-            mf2 = phdf5.MultiFile(filenames, file_idx=mf1.all_file_indexes, comm=comm)
-            (snap_bh_grnr_bound, snap_bh_grnr, snap_bh_rank) = mf2.read(("PartType5/GroupNr_bound",
-                                                                         "PartType5/GroupNr_all",
-                                                                         "PartType5/Rank_bound"), unpack=True)
-
-            # Assign a large binding energy rank to unbound group member particles:
-            # We'll use an arbitrary unbound BH if no bound BH is available.
-            unbound = (snap_bh_grnr_bound < 0) & (snap_bh_grnr >= 0)
-            if sum(unbound) > 0:
-                snap_bh_rank[unbound] = max(1, np.amax(snap_bh_rank) + 1)
-            del snap_bh_grnr_bound
-            assert len(snap_bh_grnr) == len(snap_bh_ids)
-            assert len(snap_bh_rank) == len(snap_bh_ids)
-
-            # Add this snapshot to the cache
-            membership_cache[sn] = (snap_bh_ids, snap_bh_grnr, snap_bh_rank, snap_bh_pos)
-            nr_bh_local = len(snap_bh_ids)
-            nr_bh_tot = comm.allreduce(nr_bh_local)
-            message(f"    Read {nr_bh_tot} BHs for snapshot {sn}")
-
-    # Check if we have any black holes at this snapshot
-    if membership_cache[sn] is None:
-        tracer_bh_id = np.ndarray(len(subhalo_id), dtype=np.int64)
-        tracer_bh_id[:] = NULL_BH_ID
-        tracer_bh_pos = -np.ones((len(subhalo_id),3), dtype=float)
-        return tracer_bh_id, tracer_bh_pos
-
-    # Get number of black holes at snapshot snap_nr
-    nr_bh_local = len(membership_cache[snap_nr][0])
-    nr_bh_tot = comm.allreduce(nr_bh_local)
+    reg = arr.units.registry
+    return arr.to("a*snap_length").value * unyt.Unit("snap_length", registry=reg)
     
-    # Determine which black hole particles exist at the next snapshot
-    if snap_nr < final_snap_nr:
-        bh_id_this = membership_cache[snap_nr][0]
-        bh_id_next = membership_cache[snap_nr+1][0]
-        idx_at_next_snap = psort.parallel_match(bh_id_this, bh_id_next, comm=comm)
-        exists_at_next_snap = idx_at_next_snap >= 0
-    else:
-        exists_at_next_snap = np.ones(nr_bh_local, dtype=bool)
-    nr_existing_next = comm.allreduce(np.sum(exists_at_next_snap))
-    message(f"    Number of BHs which exist at the next snapshot = {nr_existing_next}")
-
-    # Determine which black hole particles exist at the previous snapshot
-    if snap_nr > 0:
-        bh_id_this = membership_cache[snap_nr][0]
-        bh_id_prev = membership_cache[snap_nr-1][0]
-        idx_at_prev_snap = psort.parallel_match(bh_id_this, bh_id_prev, comm=comm)
-        exists_at_prev_snap = idx_at_prev_snap >= 0
-    else:
-        exists_at_prev_snap = np.ones(nr_bh_local, dtype=bool)
-    nr_existing_prev = comm.allreduce(np.sum(exists_at_prev_snap))
-    message(f"    Number of BHs which exist at the previous snapshot = {nr_existing_prev}")
-
-    # Assign priorities to the BH particles. In descending order of importance:
-    # 1. Should exist at the next timestep
-    # 2. Should exist at the previous timestep
-    # 3. Should be tightly bound
-    rank_at_this_snap = membership_cache[snap_nr][2]
-    max_rank = distributed_amax(rank_at_this_snap, comm)
-    if max_rank is None:
-        max_rank = 1
-    bh_priority = (max_rank - rank_at_this_snap).astype(np.int64) # Low rank = high priority
-    assert np.all(bh_priority>=0)
-    bh_priority += (max_rank+1)*exists_at_prev_snap               # Boost priority if exists at snap_nr-1
-    bh_priority += 2*(max_rank+1)*exists_at_next_snap             # Boost priority more if exists at snap_nr+1
-    bh_id   = membership_cache[snap_nr][0]
-    bh_grnr = membership_cache[snap_nr][1]
-    bh_pos = membership_cache[snap_nr][3]
-    message("    BH priorities assigned")
-
-    # Discard BHs which are not in halos
-    keep = bh_grnr >= 0
-    bh_priority = bh_priority[keep]
-    bh_id = bh_id[keep]
-    bh_grnr = bh_grnr[keep]
-    bh_pos = bh_pos[keep,:]
-
-    # Sort BH particles by halo and then by priority within a halo
-    max_priority = distributed_amax(bh_priority, comm)
-    if max_priority is None:
-        max_priority = 1
-    sort_key = bh_grnr * (max_priority+1) + bh_priority
-    order = psort.parallel_sort(sort_key, return_index=True, comm=comm)
-    del sort_key
-    bh_priority = psort.fetch_elements(bh_priority, order, comm=comm)
-    bh_id = psort.fetch_elements(bh_id, order, comm=comm)
-    bh_grnr =  psort.fetch_elements(bh_grnr, order, comm=comm)
-    bh_pos = psort.fetch_elements(bh_pos, order, comm=comm)
-    del order
-    message("    Sorted BH particles by priority")
-
-    # Now we need to discard all but the last (i.e. highest priority) particle in each halo.
-    # Discard any particle which is in the same halo as the next particle on the same rank.
-    keep = np.ones(len(bh_id), dtype=bool)
-    keep[:-1] = bh_grnr[:-1] != bh_grnr[1:]
-    
-    # The last particle on each rank needs special treatment:
-    # We need to know the group index of the first particle on the next rank
-    # which has particles. Find the first group number on every rank.
-    if len(bh_grnr) > 0:
-        first_grnr = bh_grnr[0]
-    else:
-        first_grnr = None
-    first_grnr = comm.allgather(first_grnr)
-    
-    # Ranks other than the last need to determine if their last particle
-    # is in the same group as the first particle on a later rank.
-    if comm_rank < (comm_size-1) and len(bh_grnr) > 0:
-        first_grnr_next_rank = None
-        for i in range(comm_rank+1, comm_size):
-            if first_grnr[i] is not None:
-                first_grnr_next_rank = first_grnr[i]
-                break
-        if first_grnr_next_rank is not None:
-            if bh_grnr[-1] == first_grnr_next_rank:
-                # A later rank has a particle in the same halo as our last particle.
-                # The later particle will have a higher priority so discard this one.
-                keep[-1] = False
-
-    # Discard particles which are not the highest priority in their halo
-    bh_id = bh_id[keep]
-    bh_grnr = bh_grnr[keep]
-    bh_pos = bh_pos[keep,:]
-    del bh_priority
-    message("    Discarded low priority BH particles")
-
-    # Now that we only have the highest priority particle in each halo,
-    # for each VR halo find the 0-1 BH particles which belong to that halo
-    # and look up their IDs. Here was assume that a VR group's array index
-    # in the catalogue is equal to it's ID minus 1.
-    ptr = psort.parallel_match(subhalo_id-1, bh_grnr, comm=comm)
-    nr_groups_matched = comm.allreduce(np.sum(ptr>=0))
-    nr_groups_total = comm.allreduce(len(ptr))
-    fraction_matched = nr_groups_matched / nr_groups_total
-    message(f"    Matched fraction {fraction_matched:.2f} of VR groups to BHs")
-
-    # Fetch the IDs and positions of the matched black holes. Return ID=NULL_BH_ID where there's no match.
-    tracer_bh_id = np.ndarray(len(subhalo_id), dtype=bh_id.dtype)
-    tracer_bh_id[:] = NULL_BH_ID
-    tracer_bh_id[ptr>=0] = psort.fetch_elements(bh_id, ptr[ptr>=0], comm=comm)
-    tracer_bh_pos = np.zeros((len(subhalo_id),3), dtype=bh_pos.dtype)
-    tracer_bh_pos[ptr>=0,:] = psort.fetch_elements(bh_pos, ptr[ptr>=0], comm=comm)
-
-    # As a consistency check, fetch the group number of the matched particles:
-    # Each matched particle should belong to the VR group it was matched to.
-    tracer_bh_grnr = np.ndarray(len(subhalo_id), dtype=bh_grnr.dtype)
-    tracer_bh_grnr[:] = -1
-    tracer_bh_grnr[ptr>=0] = psort.fetch_elements(bh_grnr, ptr[ptr>=0], comm=comm)
-    assert np.all(tracer_bh_grnr[ptr>=0] == subhalo_id[ptr>=0]-1)
-
-    return tracer_bh_id, tracer_bh_pos
-
 
 def match_black_holes(args):
 
@@ -247,165 +52,52 @@ def match_black_holes(args):
     filename = f"{args.lightcone_dir}/{args.lightcone_base}_particles/{args.lightcone_base}_0000.0.hdf5"
     lightcone = pr.IndexedLightcone(filename, comm=comm)
 
-    # Get snapshot redshifts and other metadata from the tree file
-    if comm_rank == 0:
-        with h5py.File(args.tree_filename % {"file_nr" : 0}, "r") as treefile:
-            # Read snapshot redshifts
-            output_snapshots = treefile["Snapshots/SnapNum"][...]
-            output_redshifts = treefile["Snapshots/Redshift"][...]
-            # Also read in VR unit information
-            vr_unit_info = {}
-            for name in treefile["UnitInfo"].attrs:
-                vr_unit_info[name] = float(treefile["UnitInfo"].attrs[name].decode())
-            # And simulation information
-            vr_sim_info = {}
-            for name in treefile["SimulationInfo"].attrs:
-                vr_sim_info[name] = treefile["SimulationInfo"].attrs[name]
-        max_snap_nr = np.amax(output_snapshots)
-        redshifts = -np.ones(max_snap_nr+1, dtype=float)
-        for outs, outr in zip(output_snapshots, output_redshifts):
-            redshifts[outs] = outr
-    else:
-        redshifts = None
-        vr_unit_info = None
-        vr_sim_info = None
-    redshifts, vr_unit_info, vr_sim_info = comm.bcast((redshifts, vr_unit_info, vr_sim_info))
-    final_snap = len(redshifts) - 1
+    # Open the halo catalogue
+    halo_cat = hc.HaloCatalogue(args.halo_format, args.first_snap, args.last_snap)
 
-    # Get physical constants etc from SWIFT:
-    # These are needed to interpret VR unit metadata since we want to
-    # assume exactly the same definitions of Mpc, Msolar etc that SWIFT used.
+    # Get simulation box size from a snapshot file
     if comm_rank == 0:
-        physical_constants_cgs = {}
-        snapshot_units = {}        
-        filename = (args.snapshot_format % {"snap_nr" : final_snap}) + ".0.hdf5"
+        filename = args.snapshot_format.format(snap_nr=args.last_snap, file_nr=0)
         with h5py.File(filename, "r") as infile:
-            group = infile["PhysicalConstants/CGS"]
-            for name in group.attrs:
-                physical_constants_cgs[name] = float(group.attrs[name])
-            group = infile["Units"]
-            for name in group.attrs:
-                snapshot_units[name] = float(group.attrs[name])
-            boxsize = infile["Header"].attrs["BoxSize"]
-            assert np.all(boxsize==boxsize[0])
-            boxsize = boxsize[0]
+            boxsize_no_units = infile["Header"].attrs["BoxSize"][0]
     else:
-        physical_constants_cgs = None
-        snapshot_units = None
-        boxsize = None
-    physical_constants_cgs, snapshot_units, boxsize = comm.bcast((physical_constants_cgs, snapshot_units, boxsize))
-
-    # Read the merger tree data we need:
-    # The Redshift and [XYZ]cminpot arrays will be updated to the point of lightcone crossing.
-    position_props = ("Subhalo/Xcmbp_bh", "Subhalo/Ycmbp_bh", "Subhalo/Zcmbp_bh",
-                      "Subhalo/Xcminpot", "Subhalo/Ycminpot", "Subhalo/Zcminpot")
-    mass_props     = ("Subhalo/Mass_tot", "Subhalo/Mass_star", "Subhalo/Mass_gas", "Subhalo/Mass_bh")
-    other_props    = ("Subhalo/ID_mbp_bh", "Subhalo/n_bh", "Subhalo/Structuretype", "Subhalo/SnapNum", "Subhalo/ID")
-    merger_tree_props = (position_props + mass_props + other_props)
-    treefile = phdf5.MultiFile(args.tree_filename,
-                               file_nr_attr=("Header", "NumberOfFiles"),
-                               comm=comm)
-    merger_tree = treefile.read(merger_tree_props)
-    message("Read in merger trees")
-
-    # Assign redshifts to the subhalos
-    merger_tree["Subhalo/Redshift"] = redshifts[merger_tree["Subhalo/SnapNum"]]
-    assert np.all(merger_tree["Subhalo/Redshift"] > -0.5)
-
-    # Will not try to handle the (very unlikely) case where some ranks have zero halos
-    nr_halos = len(merger_tree["Subhalo/Redshift"])
-    assert nr_halos > 0
-
-    # Determine redshifts in the merger tree
-    redshifts = np.unique(merger_tree["Subhalo/Redshift"]) # Find unique values on this rank
-    redshifts = np.concatenate(comm.allgather(redshifts))  # Combine arrays from different ranks
-    redshifts = np.unique(redshifts)                       # Find unique values over all ranks
-    message("Identified snapshot redshifts")
-    for i, z in enumerate(redshifts):
-        message(f"  {i} : {z}")
-    
-    # Sort local halos by redshift
-    order = np.argsort(merger_tree["Subhalo/Redshift"])
-    for name in merger_tree:
-        merger_tree[name] = merger_tree[name][order,...]
-    message("Sorted halos by redshift")
-
-    # Find range of local halos at each redshift
-    first_at_redshift = np.searchsorted(merger_tree["Subhalo/Redshift"], redshifts, side="left")
-    first_at_next_redshift = np.searchsorted(merger_tree["Subhalo/Redshift"], redshifts, side="right")
-    nr_at_redshift = first_at_next_redshift - first_at_redshift
-    snap_nr = -np.ones(len(redshifts), dtype=int)
-    for redshift_nr in range(len(redshifts)):
-        z = merger_tree["Subhalo/Redshift"][first_at_redshift[redshift_nr]:first_at_next_redshift[redshift_nr]]
-        if not(np.all(z==redshifts[redshift_nr])):
-            raise RuntimeError("Redshift ranges not identified correctly!")
-        if nr_at_redshift[redshift_nr] > 0:
-            snap_nr[redshift_nr] = merger_tree["Subhalo/SnapNum"][first_at_redshift[redshift_nr]]
-    comm.Allreduce(MPI.IN_PLACE, snap_nr, op=MPI.MAX) # Replace -1s where rank has no halos at snapshot
-    assert np.all(snap_nr >= 0)
-    message("Identified range of halos at each redshift")
-
-    # Special ID used to indicate no black hole. Will check that this doesn't appear as a real ID.
-    no_bh = merger_tree["Subhalo/n_bh"]==0
-    assert np.all(merger_tree["Subhalo/ID_mbp_bh"][no_bh] == NULL_BH_ID)
-
-    # Allocate storage for selected BH tracer particle info
-    merger_tree["Subhalo/ID_tracer_bh"] = np.empty_like(merger_tree["Subhalo/ID_mbp_bh"])
-    for axis in ("X","Y","Z"):
-        merger_tree[f"Subhalo/{axis}tracer_bh"] = np.empty_like(merger_tree[f"Subhalo/{axis}cmbp_bh"])
-
-    # Loop over unique redshifts in the trees, excluding the last
+        boxsize_no_units = None
+    boxsize_no_units = comm.bcast(boxsize_no_units)
+            
+    # Loop over snapshots
     halos_so_far = 0
     membership_cache = {}
-    for redshift_nr in range(len(redshifts)):
-        
-        # Find the range of halos which exist at this redshift
-        i1 = first_at_redshift[redshift_nr]
-        i2 = first_at_next_redshift[redshift_nr]
-        nr_halos_in_slice = i2-i1
-        nr_halos_in_slice_all = comm.allreduce(nr_halos_in_slice)
+    for snap_nr in range(args.first_snap, args.last_snap+1):
 
+        # Read halos at this snapshot
+        halo_data = halo_cat.read(snap_nr)
+        halo_data["InputHalos/cofp"] = drop_a_from_comoving_length(halo_data["InputHalos/cofp"])
+        
+        # Count halos
+        nr_halos_in_slice = len(halo_data["InputHalos/index"])
+        nr_halos_in_slice_all = comm.allreduce(nr_halos_in_slice)
+        
         # Choose the tracer BH particle to use for each object.
         # Returns ID and position of the selected BH particle.
-        message(f"  Choosing tracer particles for snapshot {snap_nr[redshift_nr]}")
-        tracer_id, tracer_pos = choose_bh_tracer(merger_tree["Subhalo/ID"][i1:i2],
-                                                 snap_nr[redshift_nr], final_snap, args.snapshot_format,
-                                                 args.membership_format, membership_cache)
-
-        # Store selected tracer particle position and ID
-        merger_tree["Subhalo/ID_tracer_bh"][i1:i2] = tracer_id
-        for i, axis in enumerate(("X","Y","Z")):
-            merger_tree[f"Subhalo/{axis}tracer_bh"][i1:i2] = tracer_pos[:,i]
-
+        message(f"  Choosing tracer particles for snapshot {snap_nr}")
+        tracer_id, tracer_pos = ct.choose_bh_tracer(halo_data["InputHalos/index"],
+                                                    snap_nr, args.last_Snap, args.snapshot_format,
+                                                    args.membership_format, membership_cache)
+        tracer_pos = drop_a_from_comoving_length(tracer_pos)
+        
         # Each snapshot populates a redshift range which reaches half way to adjacent snapshots
         # (range is truncated for the first and last snapshots)
-        if redshift_nr == 0:
-            z1 = redshifts[redshift_nr]
+        z_snap = halo_cat.redshift[snap_nr]        
+        if snap_nr == args.first_snap:
+            z1 = halo_cat.redshift[args.first_snap]
         else:
-            z1 = 0.5*(redshifts[redshift_nr-1]+redshifts[redshift_nr])
-        if redshift_nr == len(redshifts)-1:
-            z2 = redshifts[redshift_nr]
+            z1 = 0.5*(halo_cat.redshift[snap_nr-1]+halo_cat.redshift[snap_nr])
+        if snap_nr == args.last_snap:
+            z2 = halo_cat.redshift[args.last_snap]
         else:
-            z2 = 0.5*(redshifts[redshift_nr]+redshifts[redshift_nr+1])
+            z2 = 0.5*(halo_cat.redshift[snap_nr]+halo_cat.redshift[snap_nr+1])
 
-        message(f"  Using {nr_halos_in_slice_all} halos at z={redshifts[redshift_nr]:.3f} to populate range z={z1:.3f} to z={z2:.3f}")
-
-        # Find halo most bound BH IDs
-        id_tracer_bh = merger_tree["Subhalo/ID_tracer_bh"][i1:i2]
-        have_bh   = merger_tree["Subhalo/n_bh"][i1:i2] > 0
-        mass      = merger_tree["Subhalo/Mass_tot"][i1:i2] * 1.0e10
-
-        # Find fraction of halos with BHs as a function of mass
-        log10_mmin = 8.0
-        log10_mmax = 16.0
-        nbins = 40
-        bins = np.logspace(log10_mmin, log10_mmax, nbins+1)
-        nr_halos, bin_edges = np.histogram(mass, bins=bins)
-        nr_with_bh, bin_edges = np.histogram(mass[have_bh], bins=bins)
-        nr_halos = comm.allreduce(nr_halos)
-        nr_with_bh = comm.allreduce(nr_with_bh)
-        frac_with_bh = np.divide(nr_with_bh, nr_halos, out=np.zeros_like(nr_halos, dtype=float), where=nr_halos>0)
-        bin_centres = np.sqrt(bin_edges[1:]*bin_edges[:-1])
+        message(f"  Using {nr_halos_in_slice_all} halos at z={z_snap:.3f} to populate range z={z1:.3f} to z={z2:.3f}")
 
         # Read in the lightcone BH particle positions and IDs in this redshift range
         lightcone_props = ("Coordinates", "ParticleIDs", "ExpansionFactors")
@@ -433,68 +125,9 @@ def match_black_holes(args):
         # For each matched BH particle in the lightcone, we fetch the properties of the halo
         # it was matched with.
         halo_slice = {}
-        for name in merger_tree:
-            halo_slice[name] = psort.fetch_elements(merger_tree[name][i1:i2,...], halo_index, comm=comm)
+        for name in halo_data:
+            halo_slice[name] = psort.fetch_elements(halo_data[name], halo_index, comm=comm)
         message(f"  Found halo properties for this slice")
-
-        # Find conversion factor to put positions into comoving, no h units.
-        # This needs to be a at the redshift of the snapshot the halo is taken from.
-        a = float(1.0/(1+redshifts[redshift_nr]))
-        h = float(vr_sim_info["h_val"])
-        if vr_unit_info["Comoving_or_Physical"] == 0:
-            # VR position units are physical with no h dependence. Need to convert to comoving.
-            halo_pos_conversion = 1.0/a
-            mass_h_exponent = 0.0
-        else:
-            # VR position units are comoving 1/h. Multiply out the h factor.
-            halo_pos_conversion = 1.0/h
-            mass_h_exponent = -1.0
-
-        # Convert VR halo positions into SWIFT snapshot length units
-        swift_length_unit_in_mpc = snapshot_units["Unit length in cgs (U_L)"] / (1.0e6*physical_constants_cgs["parsec"])
-        halo_pos_conversion *= (vr_unit_info["Length_unit_to_kpc"]/1000.0) / swift_length_unit_in_mpc
-
-        # Construct metadata for output quantites
-        # Lengths: will be converted to comoving, no h, swift snapshot units
-        length_unit_cgs = snapshot_units["Unit length in cgs (U_L)"]
-        length_attrs = {
-            "U_I exponent" : (0.0,),
-            "U_L exponent" : (1.0,),
-            "U_M exponent" : (0.0,),
-            "U_T exponent" : (0.0,),
-            "U_t exponent" : (0.0,),
-            "a-scale exponent" : (1.0,),
-            "h-scale exponent" : (0.0,),
-            "Conversion factor to CGS (not including cosmological corrections)" : (length_unit_cgs,),
-            "Conversion factor to CGS (including cosmological corrections)" : (a*length_unit_cgs,),
-        }
-        
-        # Masses: just describe the existing VR units
-        mass_unit_cgs = vr_unit_info["Mass_unit_to_solarmass"] * physical_constants_cgs["solar_mass"]
-        mass_attrs = {
-            "U_I exponent" : (0.0,),
-            "U_L exponent" : (0.0,),
-            "U_M exponent" : (1.0,),
-            "U_T exponent" : (0.0,),
-            "U_t exponent" : (0.0,),
-            "a-scale exponent" : (0.0,),
-            "h-scale exponent" : (mass_h_exponent,),
-            "Conversion factor to CGS (not including cosmological corrections)" : (mass_unit_cgs,),
-            "Conversion factor to CGS (including cosmological corrections)" : (mass_unit_cgs*(h**mass_h_exponent),),
-        }
-        
-        # Dimensionless quantities
-        dimensionless_attrs = {
-            "U_I exponent" : (0.0,),
-            "U_L exponent" : (0.0,),
-            "U_M exponent" : (0.0,),
-            "U_T exponent" : (0.0,),
-            "U_t exponent" : (0.0,),
-            "a-scale exponent" : (0.0,),
-            "h-scale exponent" : (0.0,),
-            "Conversion factor to CGS (not including cosmological corrections)" : (1.0,),
-            "Conversion factor to CGS (including cosmological corrections)" : (1.0,),
-        }
 
         # Compute the position of each halo in the output:
         #
@@ -505,20 +138,20 @@ def match_black_holes(args):
         #
         # We want to compute the position in the lightcone of the potential minimum.
         #
-
+        # All quantities should be in comoving snapshot length units, although
+                      
+        length_unit = unyt.Unit("snap_length", registry=tracer_pos.units.registry)
+        boxsize = boxsize_no_units * length_unit
+        
         # Position of the matched BH particle in the lightcone particle output
-        bh_pos_in_lightcone = particle_data["Coordinates"][matched,...].ndarray_view()
+        bh_pos_in_lightcone = particle_data["Coordinates"][matched,...].to(length_unit)
 
         # Position of the selected tracer BH, taken from the snapshot
-        bh_pos_in_snapshot  = np.column_stack((halo_slice["Subhalo/Xtracer_bh"],
-                                               halo_slice["Subhalo/Ytracer_bh"],
-                                               halo_slice["Subhalo/Ztracer_bh"]))
+        bh_pos_in_snapshot = tracer_pos[matched,...].to(length_unit)
         
-        # Position of the halo's potential minimum, from VR so unit conversion needed
-        halo_pos_in_snapshot = np.column_stack((halo_slice["Subhalo/Xcminpot"],
-                                                halo_slice["Subhalo/Ycminpot"],
-                                                halo_slice["Subhalo/Zcminpot"])) * halo_pos_conversion
-        
+        # Position of the matched halo from the halo finder
+        halo_pos_in_snapshot = halo_slice["InputHalos/cofp"].to(length_unit)
+
         # Vector from the tracer BH to the potential minimum - may need box wrapping
         bh_to_minpot_vector = halo_pos_in_snapshot - bh_pos_in_snapshot
         bh_to_minpot_vector = ((bh_to_minpot_vector+0.5*boxsize) % boxsize) - 0.5*boxsize
@@ -531,63 +164,21 @@ def match_black_holes(args):
         if comm_rank == 0 and max_offset is not None:
             message(f"  Maximum minpot/bh offset = {max_offset} (SWIFT length units, comoving)")
 
-        # Overwrite the halo position in the output catalogue
-        halo_slice["Subhalo/LightconeXcminpot"] = halo_pos_in_lightcone[:,0]
-        halo_slice["Subhalo/LightconeYcminpot"] = halo_pos_in_lightcone[:,1]
-        halo_slice["Subhalo/LightconeZcminpot"] = halo_pos_in_lightcone[:,2]
-        halo_slice["Subhalo/LightconeXtracer_bh"] = bh_pos_in_lightcone[:,0]
-        halo_slice["Subhalo/LightconeYtracer_bh"] = bh_pos_in_lightcone[:,1]
-        halo_slice["Subhalo/LightconeZtracer_bh"] = bh_pos_in_lightcone[:,2]
-        # Set the redshift of each halo to the redshift of lightcone crossing
-        halo_slice["Subhalo/LightconeRedshift"] = 1.0/particle_data["ExpansionFactors"][matched]-1.0
+        # Add the position and redshift in the lightcone to the output catalogue
+        halo_slice["Lightcone/cofp"] = halo_pos_in_lightcone
+        halo_slice["Lightcone/tracer_pos"] = bh_pos_in_lightcone
+        halo_slice["Lightcone/redshift"] = 1.0/particle_data["ExpansionFactors"][matched]-1.0
         message(f"  Computed potential minimum position in lightcone")
-
-        # Function to add attributes to a dataset
-        def write_attributes(dset, attrs):
-            for name in attrs:
-                dset.attrs[name] = attrs[name]
 
         # Write out the halo catalogue for this snapshot
         output_filename = f"{args.output_dir}/lightcone_halos_{redshift_nr:04d}.hdf5"
         outfile = h5py.File(output_filename, "w", driver="mpio", comm=comm)
-        outfile.create_group("Subhalo")
         for name in halo_slice:
+            # Ensure the group exists
+            outfile.require_group(os.path.dirname(name))
             # Write the data
-            writebuf = np.ascontiguousarray(halo_slice[name])
-            dset = phdf5.collective_write(outfile, name, writebuf, comm=comm)
-            # Add unit info
-            if name in position_props:
-                write_attributes(dset, length_attrs)
-            elif name in mass_props:
-                write_attributes(dset, mass_attrs)
-            else:
-                write_attributes(dset, dimensionless_attrs)
+            dset = phdf5.collective_write(outfile, name, halo_slice[name], comm=comm)
         outfile.close()
-
-        # Count halos output so far, including this redshift slice
-        halos_so_far_all = comm.allreduce(halos_so_far)
-
-        # Add the completeness information etc
-        comm.barrier()
-        if comm_rank == 0:
-            outfile = h5py.File(output_filename, "r+")
-            grp = outfile.create_group("Completeness")
-            grp["MassBinCentre"] = bin_centres
-            grp["NumberOfHalos"] = nr_halos
-            grp["NumberOfHalosWithBH"] = nr_with_bh
-            grp["FractionWithBH"] = frac_with_bh
-            grp = outfile.create_group("Header")
-            grp.attrs["MinimumRedshift"] = z1
-            grp.attrs["MaximumRedshift"] = z2
-            grp.attrs["AllRedshiftsWithHalos"] = redshifts
-            grp.attrs["NumberOfFiles"] = len(redshifts)-1
-            grp.attrs["ThisFile"] = redshift_nr
-            grp.attrs["NumberOfHalosInFile"] = nr_matched_all
-            grp.attrs["CumulativeNumberOfHalos"] = halos_so_far_all
-            grp.attrs["LightconeDir"] = args.lightcone_dir
-            grp.attrs["LightconeBase"] = args.lightcone_base
-            grp.attrs["TreeFileName"] = args.tree_filename
-            outfile.close()
         message(f"  Wrote file: {output_filename}")
 
         # Tidy up particle arrays before we read the next slice
@@ -597,52 +188,12 @@ def match_black_holes(args):
     message("All redshift ranges done.")
 
 
-def test_choose_bh_tracers():
-    """
-    Identify BH particles to use to place VR halos on the lightcone
-    """
-    parser = MPIArgumentParser(comm, description='Determine tracer particle for each VR halo.')
-    parser.add_argument('vr_format', help='Format string for VR properties files')
-    parser.add_argument('snapshot_format', help='Format string for snapshot filenames')
-    parser.add_argument('membership_format', help='Format string for group membership filenames')
-    parser.add_argument('snap_nr', type=int, help='Snapshot number to process')
-    parser.add_argument('final_snap_nr', type=int, help='Index of the final snapshot')
-    parser.add_argument('output_file', help='Where to write the output')
-    args = parser.parse_args()
-    
-    message("Reading VR catalogue")
-    filename = (args.vr_format % {"snap_nr" : args.snap_nr}) + ".%(file_nr)d"
-    mf = phdf5.MultiFile(filename, file_nr_dataset="Num_of_files", comm=comm)
-    data = mf.read(("ID", "ID_mbp_bh"))
-    subhalo_id = data["ID"]
-    subhalo_id_mbp_bh = data["ID_mbp_bh"]
-
-    message("Finding tracers")
-    membership_cache = {}
-    tracer_id, tracer_pos = choose_bh_tracer(subhalo_id, args.snap_nr, args.final_snap_nr, args.snapshot_format,
-                                             args.membership_format, membership_cache)
-
-    # We should find a tracer for all groups where VR found a most bound BH particle
-    assert np.all((subhalo_id_mbp_bh==NULL_BH_ID)==(tracer_id==NULL_BH_ID))
-
-    # Count how many halos changed their most bound BH ID due to this process
-    nr_groups = comm.allreduce(len(subhalo_id))
-    nr_groups_changed = comm.allreduce(np.sum(tracer_id != subhalo_id_mbp_bh))
-    fraction_changed = nr_groups_changed / nr_groups
-    message(f"Fraction of groups which changed tracer BH ID = {fraction_changed:.3f}")
-
-    #message("Writing results")
-    #with h5py.File(args.outfile, "w", driver="mpio", comm=comm) as f:
-    #    phdf5.collective_write(f, "tracer_id", tracer_id, comm)
-
-    comm.barrier()
-    message("Done.")
-
-
 def run():
 
     parser = MPIArgumentParser(comm, description='Create lightcone halo catalogues.')
-    parser.add_argument('tree_filename',  help='Location of merger tree file')
+    parser.add_argument('halo_format', help='Format string for halo catalogue filenames (using {snap_nr}, {file_nr})')
+    parser.add_argument('first_snap', help='Index of the first snapshot to use')
+    parser.add_argument('last_snap', help='Index of the last snapshot to use')
     parser.add_argument('lightcone_dir',  help='Directory with lightcone particle outputs')
     parser.add_argument('lightcone_base', help='Base name of the lightcone to use')
     parser.add_argument('snapshot_format',  help='Format string for snapshot filenames (e.g. "snap_{snap_nr:04d}.{file_nr}.hdf5")')
@@ -653,6 +204,4 @@ def run():
 
 
 if __name__ == "__main__":
-
-    #test_choose_bh_tracers()
     run()
