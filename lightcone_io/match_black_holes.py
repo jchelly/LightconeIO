@@ -25,6 +25,51 @@ comm_size = comm.Get_size()
 NULL_BH_ID = 0
 
 
+def attributes_from_units(units):
+    """
+    Given a unyt.Unit object, generate SWIFT dataset attributes
+
+    units: the Unit object
+
+    Returns a dict with the attributes
+    """
+    attrs = {}
+
+    # Get CGS conversion factor. Note that this is the conversion to physical units,
+    # because unyt multiplies out the dimensionless a factor.
+    cgs_factor, offset = units.get_conversion_factor(units.get_cgs_equivalent())
+
+    # Get a exponent
+    a_unit = unyt.Unit("a", registry=units.registry)
+    a_exponent = units.expr.as_powers_dict()[a_unit.expr]
+    a_val = a_unit.base_value
+
+    # Get h exponent
+    h_unit = unyt.Unit("h", registry=units.registry)
+    h_exponent = units.expr.as_powers_dict()[h_unit.expr]
+    h_val = h_unit.base_value
+
+    # Find the power associated with each dimension
+    powers = units.get_mks_equivalent().dimensions.as_powers_dict()
+
+    # Set the attributes
+    attrs["Conversion factor to CGS (not including cosmological corrections)"] = [
+        float(cgs_factor / (a_val ** a_exponent) / (h_val ** h_exponent))
+    ]
+    attrs["Conversion factor to physical CGS (including cosmological corrections)"] = [
+        float(cgs_factor)
+    ]
+    attrs["U_I exponent"] = [float(powers[unyt.dimensions.current_mks])]
+    attrs["U_L exponent"] = [float(powers[unyt.dimensions.length])]
+    attrs["U_M exponent"] = [float(powers[unyt.dimensions.mass])]
+    attrs["U_T exponent"] = [float(powers[unyt.dimensions.temperature])]
+    attrs["U_t exponent"] = [float(powers[unyt.dimensions.time])]
+    attrs["a-scale exponent"] = [float(a_exponent)]
+    attrs["h-scale exponent"] = [float(h_exponent)]
+
+    return attrs
+
+
 def message(m):
     if comm_rank == 0:
         print(m)
@@ -71,7 +116,6 @@ def match_black_holes(args):
 
         # Read halos at this snapshot
         halo_data = halo_cat.read(snap_nr)
-        halo_data["InputHalos/cofp"] = drop_a_from_comoving_length(halo_data["InputHalos/cofp"])
         
         # Count halos
         nr_halos_in_slice = len(halo_data["InputHalos/index"])
@@ -138,9 +182,8 @@ def match_black_holes(args):
         #
         # We want to compute the position in the lightcone of the potential minimum.
         #
-        # All quantities should be in comoving snapshot length units, although
-                      
-        length_unit = unyt.Unit("snap_length", registry=tracer_pos.units.registry)
+        registry = tracer_pos.units.registry
+        length_unit = unyt.Unit("snap_length", registry=registry)
         boxsize = boxsize_no_units * length_unit
         
         # Position of the matched BH particle in the lightcone particle output.
@@ -150,9 +193,10 @@ def match_black_holes(args):
         # Position of the selected tracer BH, taken from the snapshot.
         bh_pos_in_snapshot = psort.fetch_elements(tracer_pos, halo_index, comm=comm).to(length_unit)
                 
-        # Position of the matched halo from the halo finder
-        halo_pos_in_snapshot = halo_slice["InputHalos/cofp"].to(length_unit)
-
+        # Position of the matched halo from the halo finder:
+        # Note that the units include an a factor, which we need to remove
+        halo_pos_in_snapshot = drop_a_from_comoving_length(halo_slice["InputHalos/cofp"]).to(length_unit)
+        
         # Vector from the tracer BH to the potential minimum - may need box wrapping
         bh_to_minpot_vector = halo_pos_in_snapshot - bh_pos_in_snapshot
         bh_to_minpot_vector = ((bh_to_minpot_vector+0.5*boxsize) % boxsize) - 0.5*boxsize
@@ -168,7 +212,8 @@ def match_black_holes(args):
         # Add the position and redshift in the lightcone to the output catalogue
         halo_slice["Lightcone/cofp"] = halo_pos_in_lightcone
         halo_slice["Lightcone/tracer_pos"] = bh_pos_in_lightcone
-        halo_slice["Lightcone/redshift"] = 1.0/particle_data["ExpansionFactors"][matched]-1.0
+        halo_slice["Lightcone/redshift"] = unyt.unyt_array(1.0/particle_data["ExpansionFactors"][matched]-1.0,
+                                                           units="dimensionless", registry=registry)
         message(f"  Computed potential minimum position in lightcone")
 
         # Write out the halo catalogue for this snapshot
@@ -179,6 +224,12 @@ def match_black_holes(args):
             outfile.require_group(os.path.dirname(name))
             # Write the data
             dset = phdf5.collective_write(outfile, name, halo_slice[name], comm=comm)
+            # Write units
+            attrs = attributes_from_units(halo_slice[name].units)
+            for attr_name, attr_val in attrs.items():
+                dset.attrs[attr_name] = attr_val
+        # Correct a-exponent of the lightcone positions (they're comoving)
+        outfile["Lightcone/cofp"].attrs["a-scale exponent"] = (1.0,)
         outfile.close()
         message(f"  Wrote file: {output_filename}")
 
