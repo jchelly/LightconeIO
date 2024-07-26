@@ -208,22 +208,26 @@ def match_black_holes(args):
         max_offset = ct.distributed_amax(bh_to_minpot_vector.flatten(), comm)
         if comm_rank == 0 and max_offset is not None:
             message(f"  Maximum minpot/bh offset = {max_offset} (SWIFT length units, comoving)")
-
+            
         # Add the position and redshift in the lightcone to the output catalogue
         halo_slice["Lightcone/cofp"] = halo_pos_in_lightcone
         halo_slice["Lightcone/tracer_pos"] = bh_pos_in_lightcone
         halo_slice["Lightcone/redshift"] = unyt.unyt_array(1.0/particle_data["ExpansionFactors"][matched]-1.0,
                                                            units="dimensionless", registry=registry)
+        # Add snapshot number to the output catalogue
+        snap_nr_arr = np.ones(len(halo_slice["Lightcone/redshift"]), dtype=int)*snap_nr
+        halo_slice["Lightcone/snap_nr"] = unyt.unyt_array(snap_nr_arr, dtype=int, units="dimensionless", registry=registry)
+        
         message(f"  Computed potential minimum position in lightcone")
 
         # Write out the halo catalogue for this snapshot
         output_filename = f"{args.output_dir}/lightcone_halos_{snap_nr:04d}.hdf5"
-        outfile = h5py.File(output_filename, "w", driver="mpio", comm=comm)
+        outfile = h5py.File(output_filename, "w", driver="mpio", comm=comm, libver="v108")
         for name in halo_slice:
             # Ensure the group exists
             outfile.require_group(os.path.dirname(name))
             # Write the data
-            dset = phdf5.collective_write(outfile, name, halo_slice[name], comm=comm)
+            dset = phdf5.collective_write(outfile, name, halo_slice[name], gzip=6, comm=comm)
             # Write units
             attrs = attributes_from_units(halo_slice[name].units)
             for attr_name, attr_val in attrs.items():
