@@ -232,7 +232,7 @@ def choose_bh_tracer(halo_index, snap_nr, final_snap_nr, snapshot_format,
     tracer_bh_id = np.ndarray(len(halo_index), dtype=bh_id.dtype)
     tracer_bh_id[:] = NULL_BH_ID
     tracer_bh_id[ptr>=0] = psort.fetch_elements(bh_id, ptr[ptr>=0], comm=comm)
-    tracer_bh_pos = np.zeros((len(halo_index),3), dtype=bh_pos.dtype)
+    tracer_bh_pos = np.zeros((len(halo_index),3), dtype=bh_pos.dtype) * bh_pos.units
     tracer_bh_pos[ptr>=0,:] = psort.fetch_elements(bh_pos, ptr[ptr>=0], comm=comm)
 
     # As a consistency check, fetch the group number of the matched particles:
@@ -241,7 +241,7 @@ def choose_bh_tracer(halo_index, snap_nr, final_snap_nr, snapshot_format,
     tracer_bh_grnr[:] = -1
     tracer_bh_grnr[ptr>=0] = psort.fetch_elements(bh_grnr, ptr[ptr>=0], comm=comm)
     assert np.all(tracer_bh_grnr[ptr>=0] == halo_index[ptr>=0])
-
+    
     return tracer_bh_id, tracer_bh_pos
 
 
@@ -267,7 +267,7 @@ def test_choose_bh_tracers():
     membership_cache = {}
     tracer_id, tracer_pos = choose_bh_tracer(halo_data["InputHalos/index"], args.snap_nr, args.last_snap,
                                              args.snapshot_format, args.membership_format, membership_cache)
-
+    
     message("Writing results")
     with h5py.File(args.output_file, "w", driver="mpio", comm=comm) as f:
         phdf5.collective_write(f, "tracer_id", tracer_id, comm)
