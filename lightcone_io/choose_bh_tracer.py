@@ -88,17 +88,17 @@ def choose_bh_tracer(halo_index, snap_nr, final_snap_nr, snapshot_format,
             filenames = PartialFormatter().format(snapshot_format, snap_nr=sn, file_nr=None)            
             mf1 = phdf5.MultiFile(filenames, file_nr_attr=("Header","NumFilesPerSnapshot"), comm=comm)
             snap_bh_ids, snap_bh_pos = mf1.read(("PartType5/ParticleIDs", "PartType5/Coordinates"), unpack=True, read_attributes=True)
+            
+            # Check for the case where there are no BHs at this snapshot: MultiFile.read()
+            # returns None if no ranks read any elements.
+            if snap_bh_ids is None:
+                membership_cache[sn] = (None, None, None, None, reg)
+                continue
 
             # Add unit info to the positions
             pos_units = swift.soap_units_from_attributes(snap_bh_pos.attrs, reg)
             snap_bh_pos = unyt.unyt_array(snap_bh_pos, units=pos_units)
             
-            # Check for the case where there are no BHs at this snapshot: MultiFile.read()
-            # returns None if no ranks read any elements.
-            if snap_bh_ids is None:
-                membership_cache[sn] = None
-                continue
-
             # Read in the black hole particle halo membership
             filenames = PartialFormatter().format(membership_format, snap_nr=sn, file_nr=None)
             mf2 = phdf5.MultiFile(filenames, file_idx=mf1.all_file_indexes, comm=comm)
@@ -108,16 +108,17 @@ def choose_bh_tracer(halo_index, snap_nr, final_snap_nr, snapshot_format,
             assert len(snap_bh_rank) == len(snap_bh_ids)
 
             # Add this snapshot to the cache
-            membership_cache[sn] = (snap_bh_ids, snap_bh_grnr, snap_bh_rank, snap_bh_pos)
+            membership_cache[sn] = (snap_bh_ids, snap_bh_grnr, snap_bh_rank, snap_bh_pos, reg)
             nr_bh_local = len(snap_bh_ids)
             nr_bh_tot = comm.allreduce(nr_bh_local)
             message(f"    Read {nr_bh_tot} BHs for snapshot {sn}")
 
     # Check if we have any black holes at this snapshot
-    if membership_cache[sn] is None:
-        tracer_bh_id = np.ndarray(len(subhalo_id), dtype=np.int64)
+    if membership_cache[sn][0] is None:
+        reg = membership_cache[sn][4]
+        tracer_bh_id = np.ndarray(len(halo_index), dtype=np.int64) * unyt.Unit("dimensionless", registry=reg)
         tracer_bh_id[:] = NULL_BH_ID
-        tracer_bh_pos = -np.ones((len(subhalo_id),3), dtype=float)
+        tracer_bh_pos = -np.ones((len(halo_index),3), dtype=float) * unyt.Unit("a*snap_length", registry=reg)
         return tracer_bh_id, tracer_bh_pos
 
     # Get number of black holes at snapshot snap_nr
