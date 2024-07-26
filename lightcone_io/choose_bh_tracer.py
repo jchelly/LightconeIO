@@ -258,10 +258,12 @@ def test_choose_bh_tracers():
     parser.add_argument('snap_nr', type=int, help='Snapshot number to process')
     parser.add_argument('output_file', help='Where to write the output')
     args = parser.parse_args()
+
+    to_read = ("InputHalos/cofp", "InputHalos/index")
     
     message("Reading halo catalogue")
     halo_cat = hc.HaloCatalogue(args.halo_format, args.first_snap, args.last_snap)
-    halo_data = halo_cat.read(args.snap_nr)
+    halo_data = halo_cat.read(args.snap_nr, to_read)
 
     message("Finding tracers")
     membership_cache = {}

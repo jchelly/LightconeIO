@@ -29,16 +29,13 @@ class HaloCatalogue:
         self.last_snap = last_snap
         self.halo_format = halo_format
         
-    def read(self, snap_nr):
+    def read(self, snap_nr, to_read):
         """
         Read in SOAP halos for the specified snapshot.
 
         Returns a dict of unyt arrays with units constructed from attributes.
         """
-
-        # Quantities we need to read in
-        to_read = ("InputHalos/cofp", "InputHalos/index")
-
+        
         # Create unit registry for this snapshot
         if comm_rank == 0:
             with h5py.File(self.halo_format.format(snap_nr=snap_nr), "r") as infile:
@@ -55,7 +52,7 @@ class HaloCatalogue:
         # Convert to unyt arrays
         for name in data:
             units = swift.soap_units_from_attributes(data[name].attrs, reg)
-            data[name] = unyt.unyt_array(data[name], units=units)
+            data[name] = unyt.unyt_array(data[name], units=units, registry=reg)
         
         return data
 
@@ -70,8 +67,11 @@ if __name__ == "__main__":
     if comm_rank == 0:
         for snap_nr in range(first_snap, last_snap+1):
             print(snap_nr, cat.redshift[snap_nr])
-            
-    data = cat.read(snap_nr=10)
+
+    # Quantities we need to read in
+    to_read = ("InputHalos/cofp", "InputHalos/index")
+        
+    data = cat.read(10, to_read)
 
     if comm_rank == 0:
         print(data)

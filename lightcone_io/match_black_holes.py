@@ -93,6 +93,12 @@ def match_black_holes(args):
 
     message(f"Starting on {comm_size} MPI ranks")
 
+    # Determine quantities to read from the halo catalogue
+    to_read = ["InputHalos/cofp", "InputHalos/index"]
+    if args.pass_through is not None:
+        for prop_name in args.pass_through.split(","):
+            to_read.append(prop_name)
+    
     # Open the lightcone particle output in MPI mode
     filename = f"{args.lightcone_dir}/{args.lightcone_base}_particles/{args.lightcone_base}_0000.0.hdf5"
     lightcone = pr.IndexedLightcone(filename, comm=comm)
@@ -115,7 +121,7 @@ def match_black_holes(args):
     for snap_nr in range(args.last_snap, args.first_snap-1, -1):
 
         # Read halos at this snapshot
-        halo_data = halo_cat.read(snap_nr)
+        halo_data = halo_cat.read(snap_nr, to_read)
         
         # Count halos
         nr_halos_in_slice = len(halo_data["InputHalos/index"])
@@ -255,6 +261,7 @@ def run():
     parser.add_argument('snapshot_format',  help='Format string for snapshot filenames (e.g. "snap_{snap_nr:04d}.{file_nr}.hdf5")')
     parser.add_argument('membership_format', help='Format string for group membership filenames')
     parser.add_argument('output_dir',     help='Where to write the output')
+    parser.add_argument('--pass-through', default=None, help='Comma separated list of SOAP properties to pass through')
     args = parser.parse_args()
     match_black_holes(args)
 
