@@ -288,8 +288,15 @@ class IndexedLightconeParticleType:
             if read_extra:
                 extra_infile.close()
 
-        for name in property_names:
-            assert offset[name] == nr_particles
+        # Check for the case where no particles were read
+        if len(offset) == 0:
+            # Nothing was read, so create empty arrays based on lightcone metadata
+            for name in property_names:
+                data[name] = np.empty_like(self.properties[name])
+        else:
+            # Read at least one cell, so check we read the expected number of particles
+            for name in property_names:
+                assert offset[name] == nr_particles
 
         return data
 
@@ -342,6 +349,7 @@ class IndexedLightconeParticleType:
 
         # Loop over and yield chunks of cells containing up to max_particles
         i1 = 0
+        nr_yielded = 0
         while i1 < nr_cells:
             
             # Will always read at least one cell
@@ -356,10 +364,15 @@ class IndexedLightconeParticleType:
             # Read and return the cell(s), if they contain any particles
             if nr_to_read > 0:
                 yield self.read_cells(property_names, cells_to_read[i1:i2])
-
-            # Advance to the nex set of cells
+                nr_yielded += 1
+                
+            # Advance to the next set of cells
             i1 = i2
 
+        # If we didn't read anything, return a set of empty arrays
+        if nr_yielded == 0:
+            yield self.read_cells(property_names, cells_to_read[1:0])
+            
     def split_cells_by_mpi_rank(self, cells_to_read):
 
         # Find number of cells to read on each MPI rank
