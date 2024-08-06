@@ -12,6 +12,7 @@ import virgo.util.match as match
 import virgo.mpi.parallel_hdf5 as phdf5
 import virgo.mpi.parallel_sort as psort
 from virgo.mpi.util import MPIArgumentParser
+import virgo.formats.swift
 
 import lightcone_io.particle_reader as pr
 import lightcone_io.halo_catalogue as hc
@@ -125,8 +126,7 @@ def match_black_holes(args):
     if args.halo_type == "SOAP":
         halo_cat = hc.SOAPCatalogue(args.halo_format, args.first_snap, args.last_snap)
     elif args.halo_type == "HBTplus":
-        halo_cat = hc.HBTPlusCatalogue(args.halo_format, args.first_snap, args.last_snap,
-                                       swift_unit_registry)
+        halo_cat = hc.HBTplusCatalogue(args.halo_format, args.snapshot_format, args.first_snap, args.last_snap)
     else:
         raise ValueError("Unrecognized value for --halo-type option")
                     
