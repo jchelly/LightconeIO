@@ -1,12 +1,12 @@
 #!/bin/bash
 #
-#SBATCH --nodes=1
+#SBATCH --nodes=2
 #SBATCH --tasks-per-node=128
 #SBATCH --cpus-per-task=1
-#SBATCH -o ./logs/L1000N1800/match_bh_%x.lightcone%a.out
+#SBATCH -o ./logs/L1000N1800/match_dm_%x.lightcone%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
-#SBATCH -t 3:00:00
+#SBATCH -t 0:30:00
 #
 
 module purge
@@ -40,6 +40,6 @@ output_dir=/snap8/scratch/dp004/jch/FLAMINGO/Tests/${sim}/lightcone_halos/lightc
 lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
 
 # Run
-mpirun python3 -m mpi4py -m lightcone_io.match_black_holes \
-       "${halo_format}" 0 77 75 77 "${lightcone_dir}" "lightcone${lightcone_nr}" "${snapshot_format}" "${membership_format}" "${output_dir}" \
-       --halo-type=HBTplus
+mpirun -- python3 -m mpi4py -m lightcone_io.match_black_holes \
+       "${halo_format}" 0 77 77 77 "${lightcone_dir}" "lightcone${lightcone_nr}" "${snapshot_format}" "${membership_format}" "${output_dir}" \
+       --halo-type=HBTplus --part-type=1
