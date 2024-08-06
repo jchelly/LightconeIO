@@ -109,7 +109,7 @@ def match_black_holes(args):
     # we need the snapshot unit system to interpret the catalogues using SWIFT's
     # physical constants for consistency.
     if comm_rank == 0:
-        filename = args.snapshot_format.format(snap_nr=args.last_snap, file_nr=0)
+        filename = args.snapshot_format.format(snap_nr=args.last_sim_snap, file_nr=0)
         with h5py.File(filename, "r") as infile:
             boxsize_no_units = infile["Header"].attrs["BoxSize"][0]
             swift_unit_registry = virgo.formats.swift.soap_unit_registry_from_snapshot(infile)
@@ -124,16 +124,16 @@ def match_black_holes(args):
     
     # Open the halo catalogue
     if args.halo_type == "SOAP":
-        halo_cat = hc.SOAPCatalogue(args.halo_format, args.first_snap, args.last_snap)
+        halo_cat = hc.SOAPCatalogue(args.halo_format, args.first_sim_snap, args.last_sim_snap)
     elif args.halo_type == "HBTplus":
-        halo_cat = hc.HBTplusCatalogue(args.halo_format, args.snapshot_format, args.first_snap, args.last_snap)
+        halo_cat = hc.HBTplusCatalogue(args.halo_format, args.snapshot_format, args.first_sim_snap, args.last_sim_snap)
     else:
         raise ValueError("Unrecognized value for --halo-type option")
                     
     # Loop over snapshots
     halos_so_far = 0
     membership_cache = {}
-    for snap_nr in range(args.last_snap, args.first_snap-1, -1):
+    for snap_nr in range(args.end_snap, args.start_snap-1, -1):
 
         # Read halos at this snapshot
         halo_data = halo_cat.read(snap_nr, to_read)
@@ -147,7 +147,7 @@ def match_black_holes(args):
         part_type = f"PartType{args.part_type}"
         message(f"  Choosing tracer particles for snapshot {snap_nr} using {part_type}")
         tracer_id, tracer_pos = ct.choose_bh_tracer(halo_data["InputHalos/index"],
-                                                    snap_nr, args.last_snap, args.snapshot_format,
+                                                    snap_nr, args.last_sim_snap, args.snapshot_format,
                                                     args.membership_format, membership_cache,
                                                     part_type)
         tracer_pos = drop_a_from_comoving_length(tracer_pos)
@@ -155,12 +155,12 @@ def match_black_holes(args):
         # Each snapshot populates a redshift range which reaches half way to adjacent snapshots
         # (range is truncated for the first and last snapshots)
         z_snap = halo_cat.redshift[snap_nr]        
-        if snap_nr == args.first_snap:
-            z2 = halo_cat.redshift[args.first_snap]
+        if snap_nr == args.first_sim_snap:
+            z2 = halo_cat.redshift[args.first_sim_snap]
         else:
             z2 = 0.5*(halo_cat.redshift[snap_nr-1]+halo_cat.redshift[snap_nr])
-        if snap_nr == args.last_snap:
-            z1 = halo_cat.redshift[args.last_snap]
+        if snap_nr == args.last_sim_snap:
+            z1 = halo_cat.redshift[args.last_sim_snap]
         else:
             z1 = 0.5*(halo_cat.redshift[snap_nr]+halo_cat.redshift[snap_nr+1])
 
@@ -274,8 +274,10 @@ def run():
 
     parser = MPIArgumentParser(comm, description='Create lightcone halo catalogues.')
     parser.add_argument('halo_format', help='Format string for halo catalogue filenames (using {snap_nr}, {file_nr})')
-    parser.add_argument('first_snap', type=int, help='Index of the first snapshot to use')
-    parser.add_argument('last_snap', type=int, help='Index of the last snapshot to use')
+    parser.add_argument('first_sim_snap', type=int, help='Index of the first snapshot of the simulation')
+    parser.add_argument('last_sim_snap', type=int, help='Index of the last snapshot of the simulation')
+    parser.add_argument('start_snap', type=int, help='Index of the first snapshot to process')
+    parser.add_argument('end_snap', type=int, help='Index of the last snapshot to process')
     parser.add_argument('lightcone_dir',  help='Directory with lightcone particle outputs')
     parser.add_argument('lightcone_base', help='Base name of the lightcone to use')
     parser.add_argument('snapshot_format',  help='Format string for snapshot filenames (e.g. "snap_{snap_nr:04d}.{file_nr}.hdf5")')
