@@ -52,7 +52,7 @@ def distributed_amax(arr, comm):
 
 
 def choose_bh_tracer(halo_index, snap_nr, final_snap_nr, snapshot_format,
-                     membership_format, membership_cache):
+                     membership_format, membership_cache, part_type):
     """
     Find the ID of a suitable tracer particle for each subhalo
     Ideally we want to pick a black hole that exists at the next
@@ -64,6 +64,7 @@ def choose_bh_tracer(halo_index, snap_nr, final_snap_nr, snapshot_format,
     snapshot_format: format string for snapshot filenames
     membership_format: format string for group membership filenames
     membership_cache: stores previously read BH halo membership
+    part_type: particle type to use to trace halos
     """
 
     # Ensure we have the BH IDs and halo membership for snapshots snap_nr-1,
@@ -87,7 +88,7 @@ def choose_bh_tracer(halo_index, snap_nr, final_snap_nr, snapshot_format,
             # Read in the black hole particle IDs and positions for this snapshot
             filenames = PartialFormatter().format(snapshot_format, snap_nr=sn, file_nr=None)            
             mf1 = phdf5.MultiFile(filenames, file_nr_attr=("Header","NumFilesPerSnapshot"), comm=comm)
-            snap_bh_ids, snap_bh_pos = mf1.read(("PartType5/ParticleIDs", "PartType5/Coordinates"), unpack=True, read_attributes=True)
+            snap_bh_ids, snap_bh_pos = mf1.read((f"{part_type}/ParticleIDs", f"{part_type}/Coordinates"), unpack=True, read_attributes=True)
             
             # Check for the case where there are no BHs at this snapshot: MultiFile.read()
             # returns None if no ranks read any elements.
@@ -102,8 +103,8 @@ def choose_bh_tracer(halo_index, snap_nr, final_snap_nr, snapshot_format,
             # Read in the black hole particle halo membership
             filenames = PartialFormatter().format(membership_format, snap_nr=sn, file_nr=None)
             mf2 = phdf5.MultiFile(filenames, file_idx=mf1.all_file_indexes, comm=comm)
-            (snap_bh_grnr, snap_bh_rank) = mf2.read(("PartType5/GroupNr_bound",
-                                                     "PartType5/Rank_bound"), unpack=True)
+            (snap_bh_grnr, snap_bh_rank) = mf2.read((f"{part_type}/GroupNr_bound",
+                                                     f"{part_type}/Rank_bound"), unpack=True)
             assert len(snap_bh_grnr) == len(snap_bh_ids)
             assert len(snap_bh_rank) == len(snap_bh_ids)
 
@@ -126,7 +127,7 @@ def choose_bh_tracer(halo_index, snap_nr, final_snap_nr, snapshot_format,
     nr_bh_tot = comm.allreduce(nr_bh_local)
     
     # Determine which black hole particles exist at the next snapshot
-    if snap_nr < final_snap_nr:
+    if snap_nr < final_snap_nr and part_type!="PartType1":
         bh_id_this = membership_cache[snap_nr][0]
         bh_id_next = membership_cache[snap_nr+1][0]
         idx_at_next_snap = psort.parallel_match(bh_id_this, bh_id_next, comm=comm)
@@ -137,7 +138,7 @@ def choose_bh_tracer(halo_index, snap_nr, final_snap_nr, snapshot_format,
     message(f"    Number of BHs which exist at the next snapshot = {nr_existing_next}")
 
     # Determine which black hole particles exist at the previous snapshot
-    if snap_nr > 0:
+    if snap_nr > 0 and part_type!="PartType1":
         bh_id_this = membership_cache[snap_nr][0]
         bh_id_prev = membership_cache[snap_nr-1][0]
         idx_at_prev_snap = psort.parallel_match(bh_id_this, bh_id_prev, comm=comm)

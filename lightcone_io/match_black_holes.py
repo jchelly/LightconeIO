@@ -144,10 +144,12 @@ def match_black_holes(args):
         
         # Choose the tracer BH particle to use for each object.
         # Returns ID and position of the selected BH particle.
-        message(f"  Choosing tracer particles for snapshot {snap_nr}")
+        part_type = f"PartType{args.part_type}"
+        message(f"  Choosing tracer particles for snapshot {snap_nr} using {part_type}")
         tracer_id, tracer_pos = ct.choose_bh_tracer(halo_data["InputHalos/index"],
                                                     snap_nr, args.last_snap, args.snapshot_format,
-                                                    args.membership_format, membership_cache)
+                                                    args.membership_format, membership_cache,
+                                                    part_type)
         tracer_pos = drop_a_from_comoving_length(tracer_pos)
         
         # Each snapshot populates a redshift range which reaches half way to adjacent snapshots
@@ -281,6 +283,7 @@ def run():
     parser.add_argument('output_dir',     help='Where to write the output')
     parser.add_argument('--pass-through', default=None, help='Comma separated list of SOAP properties to pass through')
     parser.add_argument('--halo-type', choices=("SOAP","HBTplus"), default="SOAP", help='Input halo catalogue type')
+    parser.add_argument('--part-type', type=int, default=5, help='Particle type to use for placing lightcone halos')
     args = parser.parse_args()
     match_black_holes(args)
 
