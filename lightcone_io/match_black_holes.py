@@ -103,18 +103,33 @@ def match_black_holes(args):
     filename = f"{args.lightcone_dir}/{args.lightcone_base}_particles/{args.lightcone_base}_0000.0.hdf5"
     lightcone = pr.IndexedLightcone(filename, comm=comm)
 
-    # Open the halo catalogue
-    halo_cat = hc.HaloCatalogue(args.halo_format, args.first_snap, args.last_snap)
-
-    # Get simulation box size from a snapshot file
+    # Get simulation box size and unit system from a snapshot file.
+    # HBT output specifies how to convert its chosen units to Mpc and Msolar so
+    # we need the snapshot unit system to interpret the catalogues using SWIFT's
+    # physical constants for consistency.
     if comm_rank == 0:
         filename = args.snapshot_format.format(snap_nr=args.last_snap, file_nr=0)
         with h5py.File(filename, "r") as infile:
             boxsize_no_units = infile["Header"].attrs["BoxSize"][0]
+            swift_unit_registry = virgo.formats.swift.soap_unit_registry_from_snapshot(infile)
     else:
         boxsize_no_units = None
-    boxsize_no_units = comm.bcast(boxsize_no_units)
-            
+        swift_unit_registry = None
+    boxsize_no_units, swift_unit_registry = comm.bcast((boxsize_no_units, swift_unit_registry))
+
+    # Assign units to the boxsize. Box size is comoving but we deliberately
+    # omit the a factor here.
+    boxsize = boxsize_no_units * unyt.Unit("snap_length", registry=swift_unit_registry)
+    
+    # Open the halo catalogue
+    if args.halo_type == "SOAP":
+        halo_cat = hc.SOAPCatalogue(args.halo_format, args.first_snap, args.last_snap)
+    elif args.halo_type == "HBTplus":
+        halo_cat = hc.HBTPlusCatalogue(args.halo_format, args.first_snap, args.last_snap,
+                                       swift_unit_registry)
+    else:
+        raise ValueError("Unrecognized value for --halo-type option")
+                    
     # Loop over snapshots
     halos_so_far = 0
     membership_cache = {}
@@ -190,7 +205,6 @@ def match_black_holes(args):
         #
         registry = tracer_pos.units.registry
         length_unit = unyt.Unit("snap_length", registry=registry)
-        boxsize = boxsize_no_units * length_unit
         
         # Position of the matched BH particle in the lightcone particle output.
         # Has one entry for each BH in the lightcone which matched a halo.
@@ -266,6 +280,7 @@ def run():
     parser.add_argument('membership_format', help='Format string for group membership filenames')
     parser.add_argument('output_dir',     help='Where to write the output')
     parser.add_argument('--pass-through', default=None, help='Comma separated list of SOAP properties to pass through')
+    parser.add_argument('--halo-type', choices=("SOAP","HBTplus"), default="SOAP", help='Input halo catalogue type')
     args = parser.parse_args()
     match_black_holes(args)
 
