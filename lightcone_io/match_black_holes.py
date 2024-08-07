@@ -25,6 +25,17 @@ comm_size = comm.Get_size()
 # Special most bound black hole ID for halos with no black holes
 NULL_BH_ID = 0
 
+# Particle type names used in the lightcone
+part_type_names = [
+    "Gas",
+    "DM",
+    None,
+    None,
+    "Stars",
+    "BH",
+    "Neutrino",
+    ]
+
 
 def attributes_from_units(units):
     """
@@ -168,7 +179,8 @@ def match_black_holes(args):
 
         # Read in the lightcone BH particle positions and IDs in this redshift range
         lightcone_props = ("Coordinates", "ParticleIDs", "ExpansionFactors")
-        particle_data = lightcone["BH"].read_exact(lightcone_props, redshift_range=(z1,z2))
+        part_type_name = part_type_names[args.part_type]
+        particle_data = lightcone[part_type_name].read_exact(lightcone_props, redshift_range=(z1,z2))
         if np.any(particle_data["ParticleIDs"] == NULL_BH_ID):
             raise RuntimeError("Found a BH particle with ID=NULL_BH_ID!")
         nr_parts = len(particle_data["ParticleIDs"])
