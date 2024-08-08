@@ -133,26 +133,36 @@ class HBTplusCatalogue:
         # Construct unyt representation of HBT's units
         h = unyt.Unit("h", registry=registry)
         swift_cmpc = unyt.Unit("a*swift_mpc", registry=registry)
+        swift_msun = unyt.Unit("swift_msun", registry=registry)
         hbt_length_unit = (self.units["LengthInMpch"] * swift_cmpc/h).to(swift_cmpc)
+        hbt_mass_unit = (self.units["MassInMsunh"] * swift_msun/h).to(swift_msun)
         
         # Extract the fields we want as unyt arrays using SOAP naming conventions
         data = {}
         for name in to_read:
-            if name == "InputHalos/index":
+            if name == "InputHalos/HaloCatalogueIndex":
                 data[name] = unyt.unyt_array(index, units="dimensionless", registry=registry)
                 self.description[name] = "Index of the halo in the original halo finder catalogue (first halo has index=0)"
-            elif name == "InputHalos/cofp":
+            elif name == "InputHalos/HaloCentre":
                 pos = subhalos["ComovingMostBoundPosition"].copy()
                 data[name] = unyt.unyt_array(pos, units=hbt_length_unit, registry=registry)
                 self.description[name] = "The centre of the halo as given by the halo finder"
-            elif name == "InputHalos/is_central":
+            elif name == "InputHalos/IsCentral":
                 is_central = np.where(subhalos["Rank"]==0, 1, 0)
                 data[name] = unyt.unyt_array(is_central, units="dimensionless", registry=registry)
                 self.description[name] = "Indicates if halo is central (1) or satellite (0)"
-            elif name == "InputHalos/nr_bound_part":
+            elif name == "InputHalos/NumberOfBoundParticles":
                 nbound = subhalos["Nbound"].copy()
                 data[name] = unyt.unyt_array(nbound, units="dimensionless", registry=registry)
                 self.description[name] = "Number of bound particles in the halo"
+            elif name == "BoundSubhalo/TotalMass":
+                mbound = subhalos["Mbound"].copy()
+                data[name] = unyt.unyt_array(mbound, units=hbt_mass_unit, registry=registry)
+                self.description[name] = "Mass of bound particles in the halo"
+            elif name == "InputHalos/HBTplus/TrackId":
+                trackid = subhalos["TrackId"].copy()
+                data[name] = unyt.unyt_array(trackid, units="dimensionless", registry=registry)
+                self.description[name] = "HBTplus TrackId of this halo"
             else:
                 raise KeyError("Unsupported HBT property name!")
         

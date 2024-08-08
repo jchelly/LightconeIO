@@ -106,7 +106,7 @@ def match_black_holes(args):
     message(f"Starting on {comm_size} MPI ranks")
 
     # Determine quantities to read from the halo catalogue
-    to_read = ["InputHalos/cofp", "InputHalos/index"]
+    to_read = ["InputHalos/HaloCentre", "InputHalos/HaloCatalogueIndex"]
     if args.pass_through is not None:
         for prop_name in args.pass_through.split(","):
             to_read.append(prop_name)
@@ -150,14 +150,14 @@ def match_black_holes(args):
         halo_data = halo_cat.read(snap_nr, to_read)
         
         # Count halos
-        nr_halos_in_slice = len(halo_data["InputHalos/index"])
+        nr_halos_in_slice = len(halo_data["InputHalos/HaloCatalogueIndex"])
         nr_halos_in_slice_all = comm.allreduce(nr_halos_in_slice)
         
         # Choose the tracer BH particle to use for each object.
         # Returns ID and position of the selected BH particle.
         part_type = f"PartType{args.part_type}"
         message(f"  Choosing tracer particles for snapshot {snap_nr} using {part_type}")
-        tracer_id, tracer_pos = ct.choose_bh_tracer(halo_data["InputHalos/index"],
+        tracer_id, tracer_pos = ct.choose_bh_tracer(halo_data["InputHalos/HaloCatalogueIndex"],
                                                     snap_nr, args.last_sim_snap, args.snapshot_format,
                                                     args.membership_format, membership_cache,
                                                     part_type)
@@ -204,7 +204,7 @@ def match_black_holes(args):
         # For each matched BH particle in the lightcone, we fetch the properties of the halo
         # it was matched with.
         halo_slice = {}
-        for name in halo_data:
+        for name in sorted(halo_data):
             halo_slice[name] = psort.fetch_elements(halo_data[name], halo_index, comm=comm)
         message(f"  Found halo properties for this slice")
 
@@ -229,7 +229,7 @@ def match_black_holes(args):
                 
         # Position of the matched halo from the halo finder:
         # Note that the units include an a factor, which we need to remove
-        halo_pos_in_snapshot = drop_a_from_comoving_length(halo_slice["InputHalos/cofp"]).to(length_unit)
+        halo_pos_in_snapshot = drop_a_from_comoving_length(halo_slice["InputHalos/HaloCentre"]).to(length_unit)
         
         # Vector from the tracer BH to the potential minimum - may need box wrapping
         bh_to_minpot_vector = halo_pos_in_snapshot - bh_pos_in_snapshot
@@ -244,20 +244,20 @@ def match_black_holes(args):
             message(f"  Maximum minpot/bh offset = {max_offset} (SWIFT length units, comoving)")
             
         # Add the position and redshift in the lightcone to the output catalogue
-        halo_slice["Lightcone/cofp"] = halo_pos_in_lightcone
-        halo_slice["Lightcone/tracer_pos"] = bh_pos_in_lightcone
-        halo_slice["Lightcone/redshift"] = unyt.unyt_array(1.0/particle_data["ExpansionFactors"][matched]-1.0,
+        halo_slice["Lightcone/HaloCentre"] = halo_pos_in_lightcone
+        halo_slice["Lightcone/TracerPosition"] = bh_pos_in_lightcone
+        halo_slice["Lightcone/Redshift"] = unyt.unyt_array(1.0/particle_data["ExpansionFactors"][matched]-1.0,
                                                            units="dimensionless", registry=registry)
         # Add snapshot number to the output catalogue
-        snap_nr_arr = np.ones(len(halo_slice["Lightcone/redshift"]), dtype=int)*snap_nr
-        halo_slice["Lightcone/snap_nr"] = unyt.unyt_array(snap_nr_arr, dtype=int, units="dimensionless", registry=registry)
+        snap_nr_arr = np.ones(len(halo_slice["Lightcone/Redshift"]), dtype=int)*snap_nr
+        halo_slice["Lightcone/SnapshotNumber"] = unyt.unyt_array(snap_nr_arr, dtype=int, units="dimensionless", registry=registry)
         
         message(f"  Computed potential minimum position in lightcone")
         
         # Write out the halo catalogue for this snapshot
         output_filename = f"{args.output_dir}/lightcone_halos_{snap_nr:04d}.hdf5"
         outfile = h5py.File(output_filename, "w", driver="mpio", comm=comm, libver="v108")
-        for name in halo_slice:
+        for name in sorted(halo_slice):
             # Ensure the group exists
             outfile.require_group(os.path.dirname(name))
             # Write the data
@@ -271,7 +271,7 @@ def match_black_holes(args):
                 dset.attrs["Description"] = halo_cat.description[name]
                 
         # Correct a-exponent of the lightcone positions (they're comoving)
-        outfile["Lightcone/cofp"].attrs["a-scale exponent"] = (1.0,)
+        outfile["Lightcone/HaloCentre"].attrs["a-scale exponent"] = (1.0,)
         outfile.close()
         message(f"  Wrote file: {output_filename}")
 
