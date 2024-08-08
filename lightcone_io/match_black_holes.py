@@ -22,8 +22,9 @@ comm = MPI.COMM_WORLD
 comm_rank = comm.Get_rank()
 comm_size = comm.Get_size()
 
-# Special most bound black hole ID for halos with no black holes
-NULL_BH_ID = 0
+# Special most bound black hole ID for halos with no black holes.
+# Must not appear as a particle ID.
+NULL_BH_ID = np.iinfo(np.int64).max
 
 # Particle type names used in the lightcone
 part_type_names = [
@@ -160,7 +161,7 @@ def match_black_holes(args):
         tracer_id, tracer_pos = ct.choose_bh_tracer(halo_data["InputHalos/HaloCatalogueIndex"],
                                                     snap_nr, args.last_sim_snap, args.snapshot_format,
                                                     args.membership_format, membership_cache,
-                                                    part_type)
+                                                    part_type, NULL_BH_ID)
         tracer_pos = drop_a_from_comoving_length(tracer_pos)
         
         # Each snapshot populates a redshift range which reaches half way to adjacent snapshots
@@ -245,7 +246,7 @@ def match_black_holes(args):
             
         # Add the position and redshift in the lightcone to the output catalogue
         halo_slice["Lightcone/HaloCentre"] = halo_pos_in_lightcone
-        halo_slice["Lightcone/TracerPosition"] = bh_pos_in_lightcone
+        #halo_slice["Lightcone/TracerPosition"] = bh_pos_in_lightcone
         halo_slice["Lightcone/Redshift"] = unyt.unyt_array(1.0/particle_data["ExpansionFactors"][matched]-1.0,
                                                            units="dimensionless", registry=registry)
         # Add snapshot number to the output catalogue
@@ -267,8 +268,7 @@ def match_black_holes(args):
             for attr_name, attr_val in attrs.items():
                 dset.attrs[attr_name] = attr_val
             # Write description
-            if name in halo_cat.description:
-                dset.attrs["Description"] = halo_cat.description[name]
+            dset.attrs["Description"] = halo_cat.description[name]
                 
         # Correct a-exponent of the lightcone positions (they're comoving)
         outfile["Lightcone/HaloCentre"].attrs["a-scale exponent"] = (1.0,)

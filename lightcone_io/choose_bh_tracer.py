@@ -20,9 +20,6 @@ comm = MPI.COMM_WORLD
 comm_rank = comm.Get_rank()
 comm_size = comm.Get_size()
 
-# Special most bound black hole ID for halos with no black holes
-NULL_BH_ID = 0
-
 
 def message(m):
     if comm_rank == 0:
@@ -52,7 +49,8 @@ def distributed_amax(arr, comm):
 
 
 def choose_bh_tracer(halo_index, snap_nr, final_snap_nr, snapshot_format,
-                     membership_format, membership_cache, part_type):
+                     membership_format, membership_cache, part_type,
+                     NULL_BH_ID):
     """
     Find the ID of a suitable tracer particle for each subhalo
     Ideally we want to pick a black hole that exists at the next
