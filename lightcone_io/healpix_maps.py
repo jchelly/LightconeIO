@@ -203,12 +203,19 @@ class ShellArray(collections.abc.Sequence):
         with h5py.File(fname, "r") as infile:
             self.nr_shells = infile["Lightcone"].attrs["nr_shells"][0]
 
-        # Initialise shells
+        self.basedir = basedir
+        self.basename = basename
+            
+        # Creating a Shell instance involves reading a file, so we don't
+        # initialize shells until they're accessed.
         self._shell = []
         for shell_nr in range(self.nr_shells):
-            self._shell.append(Shell(basedir, basename, shell_nr))
+            self._shell.append(None)
         
     def __getitem__(self, index):
+        # Initialize shell on access, if we didn't already
+        if self._shell[index] is None:
+            self._shell[index] = Shell(self.basedir, self.basename, index)
         return self._shell[index]
 
     def __len__(self):
