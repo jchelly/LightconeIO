@@ -125,9 +125,9 @@ def choose_bh_tracer(halo_index, snap_nr, final_snap_nr, snapshot_format,
     nr_bh_tot = comm.allreduce(nr_bh_local)
     
     # Determine which black hole particles exist at the next snapshot
-    if snap_nr < final_snap_nr and part_type!="PartType1":
-        bh_id_this = membership_cache[snap_nr][0]
-        bh_id_next = membership_cache[snap_nr+1][0]
+    bh_id_this = membership_cache[snap_nr][0]
+    bh_id_next = membership_cache[snap_nr+1][0]
+    if bh_id_this is not None and bh_id_next is not None and part_type!="PartType1":    
         idx_at_next_snap = psort.parallel_match(bh_id_this, bh_id_next, comm=comm)
         exists_at_next_snap = idx_at_next_snap >= 0
     else:
@@ -136,9 +136,9 @@ def choose_bh_tracer(halo_index, snap_nr, final_snap_nr, snapshot_format,
     message(f"    Number of BHs which exist at the next snapshot = {nr_existing_next}")
 
     # Determine which black hole particles exist at the previous snapshot
-    if snap_nr > 0 and part_type!="PartType1":
-        bh_id_this = membership_cache[snap_nr][0]
-        bh_id_prev = membership_cache[snap_nr-1][0]
+    bh_id_this = membership_cache[snap_nr][0]
+    bh_id_prev = membership_cache[snap_nr-1][0]
+    if bh_id_this is not None and bh_id_prev is not None and part_type!="PartType1":
         idx_at_prev_snap = psort.parallel_match(bh_id_this, bh_id_prev, comm=comm)
         exists_at_prev_snap = idx_at_prev_snap >= 0
     else:
