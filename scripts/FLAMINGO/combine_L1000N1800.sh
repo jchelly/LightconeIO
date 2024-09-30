@@ -27,5 +27,5 @@ output_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/combined_maps/
 \mkdir -p ${output_dir}
 lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
 
-mpirun python3 -m mpi4py -m lightcone_io.combine_maps \
+mpirun -- python3 -m mpi4py -m lightcone_io.combine_maps \
     ${input_dir} ${output_dir} ${basename}

@@ -1,12 +1,12 @@
 #!/bin/bash -l
 #
-#SBATCH --nodes=6
-#SBATCH --tasks-per-node=32
+#SBATCH --nodes=4
+#SBATCH --tasks-per-node=128
 #SBATCH --cpus-per-task=1
-#SBATCH -o ./logs/L1000N1800/index_%x.lightcone%a.out
+#SBATCH -o ./logs/L1000N3600/index_%x.bh_only.lightcone%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
-#SBATCH -t 48:00:00
+#SBATCH -t 12:00:00
 #
 
 # Load modules
@@ -25,7 +25,7 @@ name=${SLURM_JOB_NAME}
 lightcone_nr=${SLURM_ARRAY_TASK_ID}
 
 # Input lightcone
-basedir=/cosma8/data/dp004/flamingo/Runs/L1000N1800/${name}/lightcones/
+basedir=/cosma8/data/dp004/flamingo/Runs/L1000N3600/${name}/lightcones/
 basename=lightcone${lightcone_nr}
 
 # Number of redshift bins
@@ -40,11 +40,13 @@ lossy=1
 chunksize=1048576
 
 # Output directory
-outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/${name}/particle_lightcones/
+outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N3600/${name}/bh_particle_lightcones/
 \mkdir -p ${outdir}
 lfs setstripe --stripe-count=-1 --stripe-size=32M ${outdir}
 
 # Run the code
 mpirun -- python3 -u -m mpi4py -m lightcone_io.index_particles \
        ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${outdir} \
-       --order ${order} --redshift-first --lossy --chunksize=${chunksize}
+       --order ${order} --redshift-first --lossy --chunksize=${chunksize} \
+       --types="BH"
+

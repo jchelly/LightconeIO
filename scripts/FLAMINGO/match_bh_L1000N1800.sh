@@ -26,7 +26,7 @@ halo_type="HBTplus"
 halo_format="/cosma8/data/dp004/flamingo/Runs/${sim}/HBT/{snap_nr:03d}/SubSnap_{snap_nr:03d}.{file_nr}.hdf5"
 
 # Lightcone output dir
-lightcone_dir="/cosma8/data/dp004/flamingo/Runs/${sim}/particle_lightcones/"
+lightcone_dir="/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/bh_particle_lightcones/"
 
 # Location of snapshot files
 snapshot_format="/cosma8/data/dp004/flamingo/Runs/${sim}/snapshots/flamingo_{snap_nr:04d}/flamingo_{snap_nr:04d}.{file_nr}.hdf5"
@@ -41,6 +41,6 @@ lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
 
 # Run
 mpirun -- python3 -m mpi4py -m lightcone_io.match_black_holes \
-       "${halo_format}" 0 77 5 36 "${lightcone_dir}" "lightcone${lightcone_nr}" "${snapshot_format}" "${membership_format}" "${output_dir}" \
+       "${halo_format}" 0 77 0 1 "${lightcone_dir}" "lightcone${lightcone_nr}" "${snapshot_format}" "${membership_format}" "${output_dir}" \
        --halo-type=HBTplus \
        --pass-through="InputHalos/IsCentral,InputHalos/NumberOfBoundParticles,BoundSubhalo/TotalMass,InputHalos/HBTplus/TrackId"
