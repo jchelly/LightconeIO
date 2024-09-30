@@ -198,7 +198,10 @@ def match_black_holes(args):
         nr_matched_all = comm.allreduce(nr_matched)
         halos_so_far += nr_matched
         halo_index = halo_index[matched]
-        pc_matched = 100.0*(nr_matched_all/nr_parts_all)
+        if nr_parts_all > 0:
+            pc_matched = 100.0*(nr_matched_all/nr_parts_all)
+        else:
+            pc_matched = 100.0
         message(f"  Matched {nr_matched_all} BH particles in this slice ({pc_matched:.2f}%)")
 
         # Create the output halo catalogue for this redshift slice:
