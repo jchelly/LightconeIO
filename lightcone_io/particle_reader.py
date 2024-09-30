@@ -381,10 +381,6 @@ class IndexedLightconeParticleType:
         nr_per_rank[:len(cells_to_read) % self.comm_size] += 1
         assert sum(nr_per_rank) == len(cells_to_read)
 
-        # TODO: handle the case where some ranks have no data
-        if np.any(nr_per_rank) == 0:
-            raise RuntimeError("MPI rank was assigned no cells!")
-
         # Find offset to first cell on each rank
         offset_on_rank = np.cumsum(nr_per_rank) - nr_per_rank
 
