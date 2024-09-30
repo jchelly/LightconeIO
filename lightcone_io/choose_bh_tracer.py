@@ -113,8 +113,8 @@ def choose_bh_tracer(halo_index, snap_nr, final_snap_nr, snapshot_format,
             message(f"    Read {nr_bh_tot} BHs for snapshot {sn}")
 
     # Check if we have any black holes at this snapshot
-    if membership_cache[sn][0] is None:
-        reg = membership_cache[sn][4]
+    if membership_cache[snap_nr][0] is None:
+        reg = membership_cache[snap_nr][4]
         tracer_bh_id = np.ndarray(len(halo_index), dtype=np.int64) * unyt.Unit("dimensionless", registry=reg)
         tracer_bh_id[:] = NULL_BH_ID
         tracer_bh_pos = -np.ones((len(halo_index),3), dtype=float) * unyt.Unit("a*snap_length", registry=reg)
