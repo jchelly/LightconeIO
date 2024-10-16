@@ -16,6 +16,7 @@ from mpi4py import MPI
 import virgo.mpi.parallel_sort as ps
 
 import lightcone_io.particle_metadata as lm
+import lightcone_io.memory_use as memory_use
 
 import h5py.h5t
 import h5py.h5s
@@ -26,7 +27,8 @@ class LightconeSorter:
     def message(self, message):
         if self.comm.Get_rank()==0:
             print(message)
-
+        memory_use.report()
+            
     def __init__(self, basedir, basename, comm, types=None):
         
         self.comm = comm
