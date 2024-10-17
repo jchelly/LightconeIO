@@ -41,7 +41,7 @@ chunksize=1048576
 # Output directory
 outdir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/L2800N5040/${name}/particle_lightcones_gas/
 \mkdir -p ${outdir}
-lfs setstripe --stripe-count=-1 --stripe-size=32M ${outdir}
+lfs setstripe --stripe-count=4 --stripe-size=32M ${outdir}
 
 # Run the code
 mpirun -- python3 -u -m mpi4py -m lightcone_io.index_particles \

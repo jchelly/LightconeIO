@@ -3,10 +3,10 @@
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=128
 #SBATCH --cpus-per-task=1
-#SBATCH -o ./logs/L1000N1800/match_bh_%x.lightcone%a.%A.out
+#SBATCH -o ./logs/L1000N1800/match_bh_all.%a.%A.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
-#SBATCH -t 4:00:00
+#SBATCH -t 12:00:00
 #
 
 module purge
@@ -15,11 +15,18 @@ module load python/3.12.4
 
 source /cosma/apps/dp004/${USER}/lightcone_env/bin/activate
 
-# Simulation to do (based on job name)
-sim="L1000N1800/${SLURM_JOB_NAME}"
+# Make an array of all runs to do
+declare -a runs=("HYDRO_ADIABATIC" "HYDRO_FIDUCIAL" "HYDRO_FIDUCIAL_HiResDM" "HYDRO_JETS_old" "HYDRO_JETS_published" "HYDRO_LOW_SIGMA8" "HYDRO_LOW_SIGMA8_STRONGEST_AGN" "HYDRO_PLANCK" "HYDRO_PLANCK_DCDM_12" "HYDRO_PLANCK_DCDM_24" "HYDRO_PLANCK_LARGE_NU_FIXED" "HYDRO_PLANCK_LARGE_NU_VARY" "HYDRO_PLANCK_LARGER_NU_FIXED" "HYDRO_STRONG_AGN" "HYDRO_STRONGER_AGN" "HYDRO_STRONGER_AGN_STRONG_SUPERNOVA" "HYDRO_STRONGEST_AGN" "HYDRO_STRONG_JETS_old" "HYDRO_STRONG_JETS_published" "HYDRO_STRONG_SUPERNOVA" "HYDRO_WEAK_AGN")
+nr_runs=${#runs[@]}
 
-# Which lightcone to use
-lightcone_nr="${SLURM_ARRAY_TASK_ID}"
+# Get run to do here
+run_nr=$((SLURM_ARRAY_TASK_ID / 2))
+sim="L1000N1800/${runs[run_nr]}"
+
+# Get lightcone index
+lightcone_nr=$((SLURM_ARRAY_TASK_ID % 2))
+
+echo Run ${sim}, lightcone ${lightcone_nr}
 
 # Location of the halo catalogues
 halo_type="HBTplus"

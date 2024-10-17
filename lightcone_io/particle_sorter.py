@@ -27,7 +27,7 @@ class LightconeSorter:
     def message(self, message):
         if self.comm.Get_rank()==0:
             print(message)
-        memory_use.report()
+        memory_use.report_usage(self.comm)
             
     def __init__(self, basedir, basename, comm, types=None):
         

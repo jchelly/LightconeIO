@@ -1,12 +1,13 @@
 #!/bin/bash -l
 #
-#SBATCH --nodes=4
-#SBATCH --tasks-per-node=128
+#SBATCH --nodes=20
+#SBATCH --tasks-per-node=64
 #SBATCH --cpus-per-task=1
 #SBATCH -o ./logs/L1000N3600/index_%x.bh_only.lightcone%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
 #SBATCH -t 12:00:00
+#SBATCH --no-requeue
 #
 
 # Load modules
@@ -42,7 +43,7 @@ chunksize=1048576
 # Output directory
 outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N3600/${name}/bh_particle_lightcones/
 \mkdir -p ${outdir}
-lfs setstripe --stripe-count=-1 --stripe-size=32M ${outdir}
+lfs setstripe --stripe-count=4 --stripe-size=32M ${outdir}
 
 # Run the code
 mpirun -- python3 -u -m mpi4py -m lightcone_io.index_particles \

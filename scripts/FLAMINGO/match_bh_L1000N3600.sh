@@ -1,12 +1,13 @@
 #!/bin/bash -l
 #
-#SBATCH --nodes=1
+#SBATCH --nodes=4
 #SBATCH --tasks-per-node=128
 #SBATCH --cpus-per-task=1
-#SBATCH -o ./logs/L1000N1800/match_bh_%x.lightcone%a.%A.out
+#SBATCH -o ./logs/L1000N3600/match_bh_%x.lightcone%a.%A.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
-#SBATCH -t 4:00:00
+#SBATCH -t 8:00:00
+#SBATCH --no-requeue
 #
 
 module purge
@@ -16,7 +17,7 @@ module load python/3.12.4
 source /cosma/apps/dp004/${USER}/lightcone_env/bin/activate
 
 # Simulation to do (based on job name)
-sim="L1000N1800/${SLURM_JOB_NAME}"
+sim="L1000N3600/${SLURM_JOB_NAME}"
 
 # Which lightcone to use
 lightcone_nr="${SLURM_ARRAY_TASK_ID}"
@@ -41,6 +42,6 @@ lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
 
 # Run
 mpirun -- python3 -m mpi4py -m lightcone_io.match_black_holes \
-       "${halo_format}" 0 77 0 77 "${lightcone_dir}" "lightcone${lightcone_nr}" "${snapshot_format}" "${membership_format}" "${output_dir}" \
+       "${halo_format}" 0 78 0 78 "${lightcone_dir}" "lightcone${lightcone_nr}" "${snapshot_format}" "${membership_format}" "${output_dir}" \
        --halo-type=HBTplus \
        --pass-through="InputHalos/IsCentral,InputHalos/NumberOfBoundParticles,BoundSubhalo/TotalMass,InputHalos/HBTplus/TrackId"
