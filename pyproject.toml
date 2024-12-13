@@ -17,6 +17,8 @@ dependencies = [
     "unyt",
     "healpy",
     "virgodc",
+    "scipy",
+    "tqdm",
 ]
 
 [tool.setuptools]
