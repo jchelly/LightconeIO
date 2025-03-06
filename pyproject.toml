@@ -17,7 +17,7 @@ dependencies = [
     "unyt",
     "healpy",
     "virgodc>=1.0.1",
-     "scipy",
+    "scipy",
     "tqdm",
 ]
 
