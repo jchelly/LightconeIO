@@ -23,7 +23,7 @@ else:
         U_T = dset.attrs["U_T exponent"][0]
         U_t = dset.attrs["U_t exponent"][0]
         return cgs_factor * (unyt.A**U_I) * (unyt.cm**U_L) * (unyt.g**U_M) * (unyt.K**U_T) * (unyt.s**U_t) 
-    
+
 class HealpixMap(collections.abc.Sequence):
 
     def __init__(self, filenames, map_name):
@@ -82,7 +82,7 @@ class HealpixMap(collections.abc.Sequence):
                 return pixels
             else:
                 return unyt.unyt_array(pixels, self._units)
-            
+
         # Determine which files to read
         nr_files = len(self._filenames)
         first_file = start // self._pix_per_file
@@ -159,13 +159,13 @@ class Shell(collections.abc.Mapping):
         file_nr = 0
         nr_files = 1
         while file_nr < nr_files:
-            fname = ("%s/%s_shells/shell_%d/%s.shell_%d.%d.hdf5" % 
+            fname = ("%s/%s_shells/shell_%d/%s.shell_%d.%d.hdf5" %
                      (basedir, basename, shell_nr, basename, shell_nr, file_nr))
             self.filenames.append(fname)
             if file_nr == 0:
                 with h5py.File(fname, "r") as infile:
                     nr_files = int(infile["Shell"].attrs["nr_files_per_shell"])
-                    length_unit_cgs = float(infile["Units"].attrs["Unit length in cgs (U_L)"])                        
+                    length_unit_cgs = float(infile["Units"].attrs["Unit length in cgs (U_L)"])
                     self.comoving_inner_radius = infile["Shell"].attrs["comoving_inner_radius"][0]
                     self.comoving_outer_radius = infile["Shell"].attrs["comoving_outer_radius"][0]
                     if unyt is not None:
@@ -205,13 +205,13 @@ class ShellArray(collections.abc.Sequence):
 
         self.basedir = basedir
         self.basename = basename
-            
+
         # Creating a Shell instance involves reading a file, so we don't
         # initialize shells until they're accessed.
         self._shell = []
         for shell_nr in range(self.nr_shells):
             self._shell.append(None)
-        
+
     def __getitem__(self, index):
         # Initialize shell on access, if we didn't already
         if self._shell[index] is None:
@@ -247,7 +247,7 @@ def combine_healpix_maps(indir, basename, shell_nr, outdir):
 
     # Read the input unit information: this has the M, L, T etc units in cgs
     input_units_cgs = lightcone_io.units.read_cgs_units(infile)
-    
+
     # Get list of datasets
     datasets = []
     for name in infile:
@@ -279,7 +279,7 @@ def combine_healpix_maps(indir, basename, shell_nr, outdir):
         for attr_name, attr_value in corrections.items():
             print("  Setting attribute ", attr_name, " to ", attr_value)
             outfile[name].attrs[attr_name] = attr_value
-            
+
     # Close the input file
     infile.close()
 
@@ -287,12 +287,12 @@ def combine_healpix_maps(indir, basename, shell_nr, outdir):
     offset = 0
     file_nr = 0
     while offset < number_of_pixels:
-        
+
         # Open the next input file
         inname = map_file_name(indir, basename, shell_nr, file_nr)
         infile = h5py.File(inname, "r")
         print("Opened input file to copy pixel data: %s" % inname)
-        
+
         # Copy pixel data from this file
         local_pixels = None
         for name in datasets:
@@ -304,7 +304,7 @@ def combine_healpix_maps(indir, basename, shell_nr, outdir):
             else:
                 if local_pixels != dset.shape[0]:
                     raise Exception("All maps must be the same size!")
-    
+
             # Copy the pixel data for this map
             outfile[name][offset:offset+local_pixels] = infile[name][:]
 
@@ -319,7 +319,7 @@ def combine_healpix_maps(indir, basename, shell_nr, outdir):
 
 
 def fetch_pixels(indir, basename, shell_nr, dataset):
-    
+
     max_per_fetch = 10*1024*1024
 
     # Loop over input files
@@ -355,7 +355,7 @@ def fetch_pixels(indir, basename, shell_nr, dataset):
 
 
 def compare_healpix_maps(indir1, indir2, basename, shell_nr, dataset):
-    
+
     # Compute hash of first map
     map1 = fetch_pixels(indir1, basename, shell_nr, dataset)
     map1_hash = hashlib.sha256()
