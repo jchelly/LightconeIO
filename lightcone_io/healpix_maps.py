@@ -25,7 +25,16 @@ else:
         return cgs_factor * (unyt.A**U_I) * (unyt.cm**U_L) * (unyt.g**U_M) * (unyt.K**U_T) * (unyt.s**U_t) 
 
 class HealpixMap(collections.abc.Sequence):
+    """
+    Class used to read lightcone HEALPix maps written out by SWIFT.
+    Numpy-style indexing can be used to read pixels from the map.
 
+    :param filenames: names of the HDF5 files containing map data
+    :type  filenames: list of str
+    :param map_name: name of the map to read
+    :type  map_name: str
+
+    """
     def __init__(self, filenames, map_name):
 
         self._filenames = filenames
@@ -44,16 +53,25 @@ class HealpixMap(collections.abc.Sequence):
 
     @property
     def nside(self):
+        """
+        Return the nside (resolution) parameter of this HEALPix map
+        """
         self._set_metadata()
         return self._nside
 
     @property
     def dtype(self):
+        """
+        Return the numpy data type of this HEALPix map
+        """
         self._set_metadata()
         return self._dtype
 
     @property
     def units(self):
+        """
+        Return the unyt units of this HEALPix map
+        """
         self._set_metadata()
         return self._units
 
@@ -62,6 +80,18 @@ class HealpixMap(collections.abc.Sequence):
         return self._nr_pixels
 
     def read_pixels(self, start, stop):
+        """
+        Read the specified range of pixels from the map and return a numpy
+        array.
+
+        :param start: index of the first pixel to read
+        :type  start: int
+        :param stop: index just after the last pixel to read
+        :type  stop: int
+
+        :return: a numpy array with the specified pixel data
+        :rtype: numpy.ndarray
+        """
         self._set_metadata()
 
         if stop < start:
@@ -151,7 +181,19 @@ class HealpixMap(collections.abc.Sequence):
 
 
 class Shell(collections.abc.Mapping):
+    """
+    Dict-like container for all of the :class:`HealpixMap` instances
+    associated with a lightcone shell. Subscripting a :class:`Shell`
+    with a map name returns a :class:`HealpixMap`.
 
+    :param basedir: directory containing the lightcone outputs
+    :type  basedir: str
+    :param basename: name of the subdirectory for this lightcone (e.g. ``lightcone0``)
+    :type  basename: str
+    :param shell_nr: index of the lightcone shell to read
+    :type  shell_nr: int
+
+    """
     def __init__(self, basedir, basename, shell_nr):
 
         # Find all files that make up this shell
@@ -195,7 +237,17 @@ class Shell(collections.abc.Mapping):
 
 
 class ShellArray(collections.abc.Sequence):
+    """
+    Sequence-like container for a set of lightcone shells. This class is
+    the recommended way to read lightcone HEALPix maps.
 
+    A :class:`ShellArray` can be indexed with an integer to return a :class:`Shell`.
+
+    :param basedir: directory containing the lightcone outputs
+    :type  basedir: str
+    :param basename: name of the subdirectory for this lightcone (e.g. ``lightcone0``)
+    :type  basename: str
+    """
     def __init__(self, basedir, basename):
 
         # Get number of shells from the index file

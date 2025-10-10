@@ -1,4 +1,4 @@
-__all__ = ["Shell", "ShellArray", "HealpixMap", "LightconeParticleType", "LightconeParticles"]
+__all__ = ["ShellArray", "Shell", "HealpixMap", "LightconeParticles", "LightconeParticleType"]
 
 # Classes for reading lightcone particle data
 from .particle_reader import IndexedLightconeParticleType as LightconeParticleType
