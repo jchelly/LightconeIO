@@ -21,16 +21,16 @@ else:
         U_M = dset.attrs["U_M exponent"][0]
         U_T = dset.attrs["U_T exponent"][0]
         U_t = dset.attrs["U_t exponent"][0]
-        return cgs_factor * (unyt.A**U_I) * (unyt.cm**U_L) * (unyt.g**U_M) * (unyt.K**U_T) * (unyt.s**U_t) 
+        return cgs_factor * (unyt.A**U_I) * (unyt.cm**U_L) * (unyt.g**U_M) * (unyt.K**U_T) * (unyt.s**U_t)
     concatenate = unyt.array.uconcatenate
-    
+
 
 def merge_cells(cell_offset, cell_length):
 
     keep = cell_length > 0
     cell_length = cell_length[keep]
     cell_offset = cell_offset[keep]
-    
+
     ncells = len(cell_length)
     j = 0
     for i in range(1,ncells):
@@ -165,7 +165,7 @@ class IndexedLightconeParticleType:
         else:
             redshift_bin_index = np.tile(redshift_bins, nr_pixels_to_read)
             healpix_bin_index = np.repeat(healpix_bins, nr_redshifts_to_read)
-            cells_to_read = redshift_bin_index + (healpix_bin_index * nr_redshift_bins)        
+            cells_to_read = redshift_bin_index + (healpix_bin_index * nr_redshift_bins)
         return cells_to_read
 
     def read_cells(self, property_names, cells_to_read):
@@ -215,7 +215,7 @@ class IndexedLightconeParticleType:
 
         # Loop over files in the lightcone
         for current_file, filename in enumerate(self.filenames):
-            
+
             # Locate file with extra datasets, if any
             if self.extra_filenames is not None:
                 extra_filename = self.extra_filenames[current_file]
@@ -325,7 +325,7 @@ class IndexedLightconeParticleType:
         healpix_bins  = self.get_pixels_in_radius(vector, radius)
         redshift_bins = self.get_redshift_bins_in_range(redshift_min, redshift_max)
         cells_to_read = self.get_cell_indexes_from_bins(redshift_bins, healpix_bins)
-        
+
         return cells_to_read
 
     def count_particles(self, vector=None, radius=None, redshift_range=None):
@@ -351,7 +351,7 @@ class IndexedLightconeParticleType:
         i1 = 0
         nr_yielded = 0
         while i1 < nr_cells:
-            
+
             # Will always read at least one cell
             i2 = i1 + 1
             nr_to_read = cell_size[i1]
@@ -365,14 +365,14 @@ class IndexedLightconeParticleType:
             if nr_to_read > 0:
                 yield self.read_cells(property_names, cells_to_read[i1:i2])
                 nr_yielded += 1
-                
+
             # Advance to the next set of cells
             i1 = i2
 
         # If we didn't read anything, return a set of empty arrays
         if nr_yielded == 0:
             yield self.read_cells(property_names, cells_to_read[1:0])
-            
+
     def split_cells_by_mpi_rank(self, cells_to_read):
 
         # Find number of cells to read on each MPI rank
@@ -502,6 +502,11 @@ class IndexedLightcone(collections.abc.Mapping):
                     raise IOError("Unable to extract base name from filename: %s" % fname)
 
             with h5py.File(fname, "r") as infile:
+
+                # Check that this file has indexing info: this class cannot be used to read the
+                # un-sorted lightcones output directly by Swift.
+                if "Cells" not in infile:
+                    raise RuntimeError("This does not appear to be an indexed particle lightcone output")
 
                 # Read metadata from the specified file
                 metadata = {}
