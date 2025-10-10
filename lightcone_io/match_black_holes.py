@@ -100,7 +100,7 @@ def drop_a_from_comoving_length(arr):
     """
     reg = arr.units.registry
     return arr.to("a*snap_length").value * unyt.Unit("snap_length", registry=reg)
-    
+
 
 def match_black_holes(args):
 
@@ -111,7 +111,7 @@ def match_black_holes(args):
     if args.pass_through is not None:
         for prop_name in args.pass_through.split(","):
             to_read.append(prop_name)
-    
+
     # Open the lightcone particle output in MPI mode
     filename = f"{args.lightcone_dir}/{args.lightcone_base}_particles/{args.lightcone_base}_0000.0.hdf5"
     lightcone = pr.IndexedLightcone(filename, comm=comm)
@@ -133,7 +133,7 @@ def match_black_holes(args):
     # Assign units to the boxsize. Box size is comoving but we deliberately
     # omit the a factor here.
     boxsize = boxsize_no_units * unyt.Unit("snap_length", registry=swift_unit_registry)
-    
+
     # Open the halo catalogue
     if args.halo_type == "SOAP":
         halo_cat = hc.SOAPCatalogue(args.halo_format, args.first_sim_snap, args.last_sim_snap)
@@ -141,7 +141,7 @@ def match_black_holes(args):
         halo_cat = hc.HBTplusCatalogue(args.halo_format, args.snapshot_format, args.first_sim_snap, args.last_sim_snap)
     else:
         raise ValueError("Unrecognized value for --halo-type option")
-                    
+
     # Loop over snapshots
     halos_so_far = 0
     membership_cache = {}
@@ -149,11 +149,11 @@ def match_black_holes(args):
 
         # Read halos at this snapshot
         halo_data = halo_cat.read(snap_nr, to_read)
-        
+
         # Count halos
         nr_halos_in_slice = len(halo_data["InputHalos/HaloCatalogueIndex"])
         nr_halos_in_slice_all = comm.allreduce(nr_halos_in_slice)
-        
+
         # Choose the tracer BH particle to use for each object.
         # Returns ID and position of the selected BH particle.
         part_type = f"PartType{args.part_type}"
@@ -163,10 +163,10 @@ def match_black_holes(args):
                                                     args.membership_format, membership_cache,
                                                     part_type, NULL_BH_ID)
         tracer_pos = drop_a_from_comoving_length(tracer_pos)
-        
+
         # Each snapshot populates a redshift range which reaches half way to adjacent snapshots
         # (range is truncated for the first and last snapshots)
-        z_snap = halo_cat.redshift[snap_nr]        
+        z_snap = halo_cat.redshift[snap_nr]
         if snap_nr == args.first_sim_snap:
             z2 = halo_cat.redshift[args.first_sim_snap]
         else:
@@ -223,18 +223,18 @@ def match_black_holes(args):
         #
         registry = tracer_pos.units.registry
         length_unit = unyt.Unit("snap_length", registry=registry)
-        
+
         # Position of the matched BH particle in the lightcone particle output.
         # Has one entry for each BH in the lightcone which matched a halo.
         bh_pos_in_lightcone = particle_data["Coordinates"][matched,...].to(length_unit)
 
         # Position of the selected tracer BH, taken from the snapshot.
         bh_pos_in_snapshot = psort.fetch_elements(tracer_pos, halo_index, comm=comm).to(length_unit)
-                
+
         # Position of the matched halo from the halo finder:
         # Note that the units include an a factor, which we need to remove
         halo_pos_in_snapshot = drop_a_from_comoving_length(halo_slice["InputHalos/HaloCentre"]).to(length_unit)
-        
+
         # Vector from the tracer BH to the potential minimum - may need box wrapping
         bh_to_minpot_vector = halo_pos_in_snapshot - bh_pos_in_snapshot
         bh_to_minpot_vector = ((bh_to_minpot_vector+0.5*boxsize) % boxsize) - 0.5*boxsize
@@ -246,7 +246,7 @@ def match_black_holes(args):
         max_offset = ct.distributed_amax(bh_to_minpot_vector.flatten(), comm)
         if comm_rank == 0 and max_offset is not None:
             message(f"  Maximum minpot/bh offset = {max_offset} (SWIFT length units, comoving)")
-            
+
         # Add the position and redshift in the lightcone to the output catalogue
         halo_slice["Lightcone/HaloCentre"] = halo_pos_in_lightcone
         #halo_slice["Lightcone/TracerPosition"] = bh_pos_in_lightcone
@@ -255,9 +255,9 @@ def match_black_holes(args):
         # Add snapshot number to the output catalogue
         snap_nr_arr = np.ones(len(halo_slice["Lightcone/Redshift"]), dtype=int)*snap_nr
         halo_slice["Lightcone/SnapshotNumber"] = unyt.unyt_array(snap_nr_arr, dtype=int, units="dimensionless", registry=registry)
-        
+
         message(f"  Computed potential minimum position in lightcone")
-        
+
         # Write out the halo catalogue for this snapshot
         output_filename = f"{args.output_dir}/lightcone_halos_{snap_nr:04d}.hdf5"
         outfile = h5py.File(output_filename, "w", driver="mpio", comm=comm, libver="v108")
@@ -272,7 +272,7 @@ def match_black_holes(args):
                 dset.attrs[attr_name] = attr_val
             # Write description
             dset.attrs["Description"] = halo_cat.description[name]
-                
+
         # Correct a-exponent of the lightcone positions (they're comoving)
         outfile["Lightcone/HaloCentre"].attrs["a-scale exponent"] = (1.0,)
         outfile.close()
