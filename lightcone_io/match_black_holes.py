@@ -260,11 +260,10 @@ def match_black_holes(args):
         message(f"  Computed potential minimum position in lightcone")
 
         # Now we need to sort all of the halos by their healpix pixel index
-        pixel_index = hp.pixelfunc.vec2pix(args.nside,
-                                           halo_pos_in_lightcone[:,0],
-                                           halo_pos_in_lightcone[:,1],
-                                           halo_pos_in_lightcone[:,2],
-                                           nest=(args.order=="nest"))
+        vectors = halo_pos_in_lightcone.ndview # healpy can't handle unyt arrays
+        pixel_index = hp.pixelfunc.vec2pix(args.nside, vectors[:,0], vectors[:,1],
+                                           vectors[:,2], nest=(args.order=="nest"))
+        del vectors
         message(f"  Computed pixel index for each halo")
 
         order = psort.parallel_sort(pixel_index, return_index=True, comm=comm)
