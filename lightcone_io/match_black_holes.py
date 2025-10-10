@@ -7,6 +7,7 @@ import h5py
 import argparse
 from mpi4py import MPI
 import unyt
+import healpy as hp
 
 import virgo.util.match as match
 import virgo.mpi.parallel_hdf5 as phdf5
@@ -258,6 +259,28 @@ def match_black_holes(args):
 
         message(f"  Computed potential minimum position in lightcone")
 
+        # Now we need to sort all of the halos by their healpix pixel index
+        pixel_index = hp.pixelfunc.vec2pix(args.nside,
+                                           halo_pos_in_lightcone[:,0],
+                                           halo_pos_in_lightcone[:,1],
+                                           halo_pos_in_lightcone[:,2],
+                                           nest=(args.order=="nest"))
+        message(f"  Computed pixel index for each halo")
+
+        order = psort.parallel_sort(pixel_index, return_index=True, comm=comm)
+        message(f"  Computed sorting order for the halos")
+
+        # Count how many halos there are in each pixel
+        npix = hp.pixelfunc.nside2npix(args.nside)
+        halos_per_pixel = psort.parallel_bincount(pixel_index, minlength=npix, comm=comm)
+        del pixel_index
+        message(f"  Computed number of halos per pixel")
+
+        # Reorder the halo properties
+        for name in sorted(halo_slice):
+            halo_slice[name] = psort.fetch_elements(halo_slice[name], order, comm=comm)
+            message(f"      Re-ordered halo property: {name}")
+
         # Write out the halo catalogue for this snapshot
         output_filename = f"{args.output_dir}/lightcone_halos_{snap_nr:04d}.hdf5"
         outfile = h5py.File(output_filename, "w", driver="mpio", comm=comm, libver="v108")
@@ -272,6 +295,12 @@ def match_black_holes(args):
                 dset.attrs[attr_name] = attr_val
             # Write description
             dset.attrs["Description"] = halo_cat.description[name]
+
+        # Write the indexing information to the file
+        index_group = outfile.require_group("Index")
+        index_group.attrs["nside"] = args.nside
+        index_group.attrs["order"] = args.order
+        phdf5.collective_write(index_group, "NumHalosPerPixel", halos_per_pixel, gzip=6, comm=comm)
 
         # Correct a-exponent of the lightcone positions (they're comoving)
         outfile["Lightcone/HaloCentre"].attrs["a-scale exponent"] = (1.0,)
@@ -301,6 +330,8 @@ def run():
     parser.add_argument('--pass-through', default=None, help='Comma separated list of SOAP properties to pass through')
     parser.add_argument('--halo-type', choices=("SOAP","HBTplus"), default="SOAP", help='Input halo catalogue type')
     parser.add_argument('--part-type', type=int, default=5, help='Particle type to use for placing lightcone halos')
+    parser.add_argument("--nside", type=int, default=16, help="HEALPpix map resolution to use to bin halos in the output")
+    parser.add_argument("--order", choices=["nest","ring"], default="nest", help="HEALPix pixel ordering scheme")
     args = parser.parse_args()
     match_black_holes(args)
 
