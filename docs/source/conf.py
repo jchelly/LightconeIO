@@ -10,6 +10,10 @@ project = 'lightcone_io'
 copyright = '2025, John Helly'
 author = 'John Helly'
 
+from importlib.metadata import version
+release = version('lightcone_io')
+version = '.'.join(release.split('.')[:2])
+
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
