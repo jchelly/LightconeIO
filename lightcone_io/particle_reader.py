@@ -49,7 +49,21 @@ def merge_cells(cell_offset, cell_length):
 
 class IndexedLightconeParticleType:
     """
-    Class to read a single particle type from a lightcone
+    Class to read a single particle type from a lightcone. This
+    assumes that the lightcone particles have been sorted by redshift
+    and healpix pixel index. We can then efficiently extract the
+    particles in particular redshift ranges and regions of the sky.
+
+    :param type_name: HDF5 group name for this particle type
+    :type  type_name: str
+    :param metadata: lightcone metadata read by :class:`ParticleLightcone`
+    :type  metadata: dict
+    :param units: system of units used in this output
+    :type  units: dict
+    :param filenames: names of the HDF5 files containing particle data
+    :type  filenames: list of str
+    :param extra_filenames: names of the HDF5 files containing additional data
+    :type  extra_filenames: list of str or None
     """
     def __init__(self, type_name, metadata, index, units, filenames,
                  extra_filenames=None):
@@ -117,6 +131,13 @@ class IndexedLightconeParticleType:
         self.extra_properties = extra_properties
 
     def set_mpi_mode(self, comm):
+        """
+        Enable MPI mode for this output. In MPI mode each MPI rank reads a
+        subset of the selected particles.
+
+        :param comm: MPI communicator
+        :type  comm: mpi4py.MPI.Comm
+        """
         self.comm = comm
         self.comm_rank = comm.Get_rank()
         self.comm_size = comm.Get_size()
@@ -124,6 +145,14 @@ class IndexedLightconeParticleType:
     def get_redshift_bins_in_range(self, redshift_min, redshift_max):
         """
         Return indexes of all redshift bins overlapping specified range
+
+        :param redshift_min: minimum redshift
+        :type  redshift_min: float
+        :param redshift_max: maximum redshift
+        :type  redshift_max: float
+
+        :return: a numpy array of ints with the bin indexes
+        :rtype: numpy.ndarray
         """
         redshift_bins = self.index["redshift_bins"]
         z_bin_min = redshift_bins[:-1]
@@ -135,6 +164,14 @@ class IndexedLightconeParticleType:
     def get_pixels_in_radius(self, vector, radius):
         """
         Return indexes of all healpix pixels within radius of vector
+
+        :param vector: direction vector as an array of 3 floats
+        :type  vector: numpy.ndarray
+        :param radius: angular radius in radians
+        :type  radius: float
+
+        :return: a numpy array of ints with the pixel indexes
+        :rtype: numpy.ndarray
         """
         nside = self.index["nside"]
         order = self.index["order"].decode() if "order" in self.index else "ring"
@@ -152,6 +189,14 @@ class IndexedLightconeParticleType:
         """
         Given arrays of redshift and healpix bins to read, return
         indexes of all cells which must be read.
+
+        :param redshift_bins: redshift bin indexes as array of ints
+        :type  redshift_bins: numpy.ndarray
+        :param healpix_bins: healpix pixel indexes as array of ints
+        :type  healpix_bins: numpy.ndarray
+
+        :return: a numpy array of ints with the cell indexes
+        :rtype: numpy.ndarray
         """
         nr_pixels_to_read = len(healpix_bins)
         nr_redshifts_to_read = len(redshift_bins)
@@ -172,6 +217,14 @@ class IndexedLightconeParticleType:
         """
         Given an array of cells to read, read the specified properties
         from the lightcone particle files.
+
+        :param property_names: list of properties to read
+        :type  property_names: list of str
+        :param cells_to_read: a numpy array of ints with the cell indexes
+        :type  cells_to_read: numpy.ndarray
+
+        :return: dict of ndarrays with the requested properties
+        :rtype: dict
         """
 
         # Check property names all exist
@@ -301,6 +354,20 @@ class IndexedLightconeParticleType:
         return data
 
     def get_cell_indexes_from_vector_radius_redshift(self, vector, radius, redshift_range):
+        """
+        Given a line of sight vector, and angular radius and a redshift range,
+        compute which cells we need to read.
+
+        :param vector: direction vector as an array of 3 floats
+        :type  vector: numpy.ndarray
+        :param radius: angular radius in radians
+        :type  radius: float
+        :param redshift_range: redshift range to read
+        :type  redshift_range: sequence of two floats [z_min, z_max]
+
+        :return: a numpy array of ints with the cell indexes
+        :rtype: numpy.ndarray
+        """
 
         if redshift_range is not None:
             # Get redshift range to read
@@ -329,19 +396,50 @@ class IndexedLightconeParticleType:
         return cells_to_read
 
     def count_particles(self, vector=None, radius=None, redshift_range=None):
+        """
+        Return the number of particles in a region defined by a line of sight
+        vector, an angular radius and a redshift range.
 
+        :param vector: direction vector as an array of 3 floats
+        :type  vector: numpy.ndarray
+        :param radius: angular radius in radians
+        :type  radius: float
+        :param redshift_range: redshift range to read
+        :type  redshift_range: sequence of two floats [z_min, z_max]
+
+        :return: the number of particles selected
+        :rtype: int
+        """
         cells_to_read = self.get_cell_indexes_from_vector_radius_redshift(vector, radius, redshift_range)
         if self.comm is not None:
-            cells_to_read = self.split_cells_by_mpi_rank(cells_to_read)
+            cells_to_read = self._split_cells_by_mpi_rank(cells_to_read)
         cell_size = self.index["cell_length"][cells_to_read]
         return np.sum(cell_size)
 
     def iterate_chunks(self, property_names, vector=None, radius=None, redshift_range=None,
                        max_particles=1048576):
+        """
+        Iterate over chunks of particles in a region defined by a line of sight
+        vector, an angular radius and a redshift range. This can be used to
+        avoid reading all of the particles into memory at once. Yields dicts
+        of arrays where the keys are the requested particle property names and
+        the values are the particle property values.
 
+        :param vector: direction vector as an array of 3 floats
+        :type  vector: numpy.ndarray
+        :param radius: angular radius in radians
+        :type  radius: float
+        :param redshift_range: redshift range to read
+        :type  redshift_range: sequence of two floats [z_min, z_max]
+        :param max_particles: maximum number of particles to return in one chunk
+        :type  max_particles: int
+
+        :yield: dict of ndarray with the particle properties for each chunk
+        :rtype: dict
+        """
         cells_to_read = self.get_cell_indexes_from_vector_radius_redshift(vector, radius, redshift_range)
         if self.comm is not None:
-            cells_to_read = self.split_cells_by_mpi_rank(cells_to_read)
+            cells_to_read = self._split_cells_by_mpi_rank(cells_to_read)
         nr_cells = len(cells_to_read)
 
         # Find the sizes of the selected cells
@@ -373,7 +471,7 @@ class IndexedLightconeParticleType:
         if nr_yielded == 0:
             yield self.read_cells(property_names, cells_to_read[1:0])
 
-    def split_cells_by_mpi_rank(self, cells_to_read):
+    def _split_cells_by_mpi_rank(self, cells_to_read):
 
         # Find number of cells to read on each MPI rank
         nr_per_rank = np.zeros(self.comm_size, dtype=int)
@@ -390,16 +488,52 @@ class IndexedLightconeParticleType:
         return cells_to_read[i1:i2]
 
     def read(self, property_names, vector=None, radius=None, redshift_range=None):
+        """
+        Read all particles in a region defined by a line of sight vector,
+        an angular radius and a redshift range. Returns a dict of arrays where
+        the keys are the requested particle property names and the values are
+        the particle property values. Always returns complete cells, so it may
+        return particles outside the requested region.
 
+        :param property_names: list of properties to read
+        :type  property_names: list of str
+        :param vector: direction vector as an array of 3 floats
+        :type  vector: numpy.ndarray
+        :param radius: angular radius in radians
+        :type  radius: float
+        :param redshift_range: redshift range to read
+        :type  redshift_range: sequence of two floats [z_min, z_max]
+
+        :return: dict of ndarray with the particle properties
+        :rtype: dict
+        """
         # Read data for the selected cells
         cells_to_read = self.get_cell_indexes_from_vector_radius_redshift(vector, radius, redshift_range)
         if self.comm is not None:
-            cells_to_read = self.split_cells_by_mpi_rank(cells_to_read)
+            cells_to_read = self._split_cells_by_mpi_rank(cells_to_read)
         data = self.read_cells(property_names, cells_to_read)
         return data
 
     def read_exact(self, property_names, vector=None, radius=None, redshift_range=None):
+        """
+        Read all particles in a region defined by a line of sight vector,
+        an angular radius and a redshift range. Returns a dict of arrays where
+        the keys are the requested particle property names and the values are
+        the particle property values. This version filters out any particles
+        outside the requested region.
 
+        :param property_names: list of properties to read
+        :type  property_names: list of str
+        :param vector: direction vector as an array of 3 floats
+        :type  vector: numpy.ndarray
+        :param radius: angular radius in radians
+        :type  radius: float
+        :param redshift_range: redshift range to read
+        :type  redshift_range: sequence of two floats [z_min, z_max]
+
+        :return: dict of ndarray with the particle properties
+        :rtype: dict
+        """
         if vector is not None:
             vector = np.asarray(vector, dtype=float)
 
@@ -470,9 +604,24 @@ class IndexedLightconeParticleType:
         return data
 
 
-class IndexedLightcone(collections.abc.Mapping):
+class ParticleLightcone(collections.abc.Mapping):
     """
-    Class used to read particle lightcones
+    Class used to read particle lightcones. This is a dict-like container for
+    the :class:`IndexedLightconeParticleType` instances which represent the
+    different particle types in this lightcone (gas, DM, stars etc).
+
+    Particle lightcones are opened by specifying the name of any one of the
+    particle data files.
+
+    If an MPI communicator is specified, then reads are parallelized over MPI
+    ranks in the communicator.
+
+    :param filename: name of one of the lightcone particle files
+    :type  filename: str
+    :param comm: MPI communicator
+    :type  comm: mpi4py.MPI.Comm, or None
+    :param extra_filename: name of a file with extra particle properties
+    :type  extra_filename: str, or None
     """
     def __init__(self, fname, comm=None, extra_filename=None):
 
@@ -559,3 +708,6 @@ class IndexedLightcone(collections.abc.Mapping):
 
     def __len__(self):
         return len(self.particle_types)
+
+# Alias for backwards compatibility
+IndexedLightcone = ParticleLightcone
