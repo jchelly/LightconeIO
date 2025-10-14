@@ -10,16 +10,6 @@ import unyt
 import lightcone_io.units
 
 
-def units_from_attributes(dset):
-    cgs_factor = dset.attrs["Conversion factor to CGS (not including cosmological corrections)"][0]
-    U_I = dset.attrs["U_I exponent"][0]
-    U_L = dset.attrs["U_L exponent"][0]
-    U_M = dset.attrs["U_M exponent"][0]
-    U_T = dset.attrs["U_T exponent"][0]
-    U_t = dset.attrs["U_t exponent"][0]
-    return cgs_factor * (unyt.A**U_I) * (unyt.cm**U_L) * (unyt.g**U_M) * (unyt.K**U_T) * (unyt.s**U_t) 
-
-
 class HealpixMap(collections.abc.Sequence):
     """
     Class used to read lightcone HEALPix maps written out by SWIFT.
@@ -45,7 +35,7 @@ class HealpixMap(collections.abc.Sequence):
                 self._dtype = infile[self._map_name].dtype
                 self._pix_per_file = infile[self._map_name].shape[0]
                 if unyt is not None:
-                    self._units = units_from_attributes(infile[self._map_name])
+                    self._units = lightcone_io.units.units_from_attributes(infile[self._map_name])
 
     @property
     def nside(self):
