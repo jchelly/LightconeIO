@@ -38,6 +38,8 @@ part_type_names = [
     "Neutrino",
     ]
 
+# HDF5 chunk size for the output
+chunk_size = 1024*1024
 
 def redshift_ranges(snap_z, first_snap, last_snap):
     """
@@ -308,7 +310,7 @@ def match_black_holes(args):
             # Ensure the group exists
             outfile.require_group(os.path.dirname(name))
             # Write the data
-            dset = phdf5.collective_write(outfile, name, halo_slice[name], gzip=6, comm=comm)
+            dset = phdf5.collective_write(outfile, name, halo_slice[name], gzip=6, chunk=chunk_size, comm=comm)
             # Write units
             attrs = attributes_from_units(halo_slice[name].units)
             for attr_name, attr_val in attrs.items():
@@ -320,14 +322,14 @@ def match_black_holes(args):
         index_group = outfile.require_group("Index")
         index_group.attrs["nside"] = args.nside
         index_group.attrs["order"] = args.order
-        phdf5.collective_write(index_group, "NumHalosPerPixel", halos_per_pixel, gzip=6, comm=comm)
+        phdf5.collective_write(index_group, "NumHalosPerPixel", halos_per_pixel, gzip=6, chunk=chunk_size, comm=comm)
 
         # Also write the offset to the first halo in each pixel. Note that halos_per_pixel
         # is distributed over all MPI ranks.
         total_halos_this_rank = np.sum(halos_per_pixel, dtype=np.int64)
         total_halos_prev_ranks = comm.scan(total_halos_this_rank) - total_halos_this_rank
         first_halo_in_pixel = np.cumsum(halos_per_pixel, dtype=np.int64) + total_halos_prev_ranks
-        phdf5.collective_write(index_group, "FirstHaloInPixel", first_halo_in_pixel, gzip=6, comm=comm)
+        phdf5.collective_write(index_group, "FirstHaloInPixel", first_halo_in_pixel, gzip=6, chunk=chunk_size, comm=comm)
 
         # Write out the range of redshifts associated with each snapshot
         snap_index = np.arange(args.first_sim_snap, args.last_sim_snap+1)
