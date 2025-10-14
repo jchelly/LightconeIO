@@ -17,8 +17,9 @@ post-processed outputs can be read with the class
 Lightcone particle metadata
 ---------------------------
 
-The lightcone object acts like a dictionary where the particle types are
-the keys. E.g. to see which types are available::
+The :py:class:`lightcone_io.ParticleLightcone` instance acts like a
+dictionary where the particle types are the keys. E.g. to see which
+types are available::
 
   print(list(lightcone))
 
