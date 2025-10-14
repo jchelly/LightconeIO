@@ -2,6 +2,13 @@
 
 This is a python module for reading lightcone output from SWIFT simulations.
 
+The source code and issue tracker are hosted on github:
+https://github.com/jchelly/LightconeIO
+
+Releases are hosted on pypi: https://pypi.org/project/lightcone-io/
+
+For documentation see: https://lightconeio.readthedocs.io/en/latest/
+
 ## Installation
 
 ### Installing in a virtual env on Cosma
@@ -203,7 +210,7 @@ input_dir=./lightcones/
 output_dir=./indexed_lightcones/
 
 mpirun python3 -m mpi4py -m lightcone_io.combine_maps \
-       ${input_dir} ${output_dir} lightcone0 lightcone1 ...  
+       ${input_dir} ${output_dir} lightcone0 lightcone1 ...
 ```
 
 This will process all shells for the specified lightcones.

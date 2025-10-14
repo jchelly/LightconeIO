@@ -5,5 +5,6 @@ Lightcone I/O module documentation
    :maxdepth: 2
    :caption: Contents:
 
+   installation
+   healpix_maps
    api
-
