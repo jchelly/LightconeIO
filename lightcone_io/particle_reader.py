@@ -6,23 +6,16 @@ import numpy as np
 import h5py
 import re
 import healpy as hp
+import unyt
 
-try:
-    import unyt
-except ImportError:
-    unyt=None
-    raise ImportWarning("Unable to import unyt. Will not return unit info.")
-    concatenate = np.concatenate
-else:
-    def units_from_attributes(dset):
-        cgs_factor = dset.attrs["Conversion factor to CGS (not including cosmological corrections)"][0]
-        U_I = dset.attrs["U_I exponent"][0]
-        U_L = dset.attrs["U_L exponent"][0]
-        U_M = dset.attrs["U_M exponent"][0]
-        U_T = dset.attrs["U_T exponent"][0]
-        U_t = dset.attrs["U_t exponent"][0]
-        return cgs_factor * (unyt.A**U_I) * (unyt.cm**U_L) * (unyt.g**U_M) * (unyt.K**U_T) * (unyt.s**U_t)
-    concatenate = unyt.array.uconcatenate
+def units_from_attributes(dset):
+    cgs_factor = dset.attrs["Conversion factor to CGS (not including cosmological corrections)"][0]
+    U_I = dset.attrs["U_I exponent"][0]
+    U_L = dset.attrs["U_L exponent"][0]
+    U_M = dset.attrs["U_M exponent"][0]
+    U_T = dset.attrs["U_T exponent"][0]
+    U_t = dset.attrs["U_t exponent"][0]
+    return cgs_factor * (unyt.A**U_I) * (unyt.cm**U_L) * (unyt.g**U_M) * (unyt.K**U_T) * (unyt.s**U_t)
 
 
 def merge_cells(cell_offset, cell_length):
@@ -599,7 +592,7 @@ class IndexedLightconeParticleType:
 
         # Merge chunks
         for name in data:
-            data[name] = concatenate(data[name])
+            data[name] = unyt.array.uconcatenate(data[name])
 
         return data
 

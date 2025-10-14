@@ -3,26 +3,22 @@
 import collections.abc
 import os
 import hashlib
-
 import numpy as np
 import h5py
+import unyt
 
 import lightcone_io.units
 
-try:
-    import unyt
-except ImportError:
-    unyt=None
-    raise ImportWarning("Unable to import unyt. Will not return unit info.")
-else:
-    def units_from_attributes(dset):
-        cgs_factor = dset.attrs["Conversion factor to CGS (not including cosmological corrections)"][0]
-        U_I = dset.attrs["U_I exponent"][0]
-        U_L = dset.attrs["U_L exponent"][0]
-        U_M = dset.attrs["U_M exponent"][0]
-        U_T = dset.attrs["U_T exponent"][0]
-        U_t = dset.attrs["U_t exponent"][0]
-        return cgs_factor * (unyt.A**U_I) * (unyt.cm**U_L) * (unyt.g**U_M) * (unyt.K**U_T) * (unyt.s**U_t) 
+
+def units_from_attributes(dset):
+    cgs_factor = dset.attrs["Conversion factor to CGS (not including cosmological corrections)"][0]
+    U_I = dset.attrs["U_I exponent"][0]
+    U_L = dset.attrs["U_L exponent"][0]
+    U_M = dset.attrs["U_M exponent"][0]
+    U_T = dset.attrs["U_T exponent"][0]
+    U_t = dset.attrs["U_t exponent"][0]
+    return cgs_factor * (unyt.A**U_I) * (unyt.cm**U_L) * (unyt.g**U_M) * (unyt.K**U_T) * (unyt.s**U_t) 
+
 
 class HealpixMap(collections.abc.Sequence):
     """
