@@ -38,7 +38,7 @@ membership_format="/cosma8/data/dp004/flamingo/Runs/${sim}/SOAP-HBT/membership_{
 # Where to write the output
 output_dir=/snap8/scratch/dp004/${USER}/FLAMINGO/HBT/${sim}/lightcone_halos/lightcone${lightcone_nr}/
 \mkdir -p ${output_dir}
-lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
+lfs setstripe --stripe-count=1 --stripe-size=8M ${output_dir}
 
 # Run
 mpirun -- python3 -m mpi4py -m lightcone_io.match_black_holes \
