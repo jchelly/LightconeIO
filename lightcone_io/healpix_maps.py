@@ -3,29 +3,34 @@
 import collections.abc
 import os
 import hashlib
-
 import numpy as np
 import h5py
+import unyt
 
 import lightcone_io.units
 
-try:
-    import unyt
-except ImportError:
-    unyt=None
-    raise ImportWarning("Unable to import unyt. Will not return unit info.")
-else:
-    def units_from_attributes(dset):
-        cgs_factor = dset.attrs["Conversion factor to CGS (not including cosmological corrections)"][0]
-        U_I = dset.attrs["U_I exponent"][0]
-        U_L = dset.attrs["U_L exponent"][0]
-        U_M = dset.attrs["U_M exponent"][0]
-        U_T = dset.attrs["U_T exponent"][0]
-        U_t = dset.attrs["U_t exponent"][0]
-        return cgs_factor * (unyt.A**U_I) * (unyt.cm**U_L) * (unyt.g**U_M) * (unyt.K**U_T) * (unyt.s**U_t) 
-    
-class HealpixMap(collections.abc.Sequence):
 
+def units_from_attributes(dset):
+    cgs_factor = dset.attrs["Conversion factor to CGS (not including cosmological corrections)"][0]
+    U_I = dset.attrs["U_I exponent"][0]
+    U_L = dset.attrs["U_L exponent"][0]
+    U_M = dset.attrs["U_M exponent"][0]
+    U_T = dset.attrs["U_T exponent"][0]
+    U_t = dset.attrs["U_t exponent"][0]
+    return cgs_factor * (unyt.A**U_I) * (unyt.cm**U_L) * (unyt.g**U_M) * (unyt.K**U_T) * (unyt.s**U_t) 
+
+
+class HealpixMap(collections.abc.Sequence):
+    """
+    Class used to read lightcone HEALPix maps written out by SWIFT.
+    Numpy-style indexing can be used to read pixels from the map.
+
+    :param filenames: names of the HDF5 files containing map data
+    :type  filenames: list of str
+    :param map_name: name of the map to read
+    :type  map_name: str
+
+    """
     def __init__(self, filenames, map_name):
 
         self._filenames = filenames
@@ -44,16 +49,25 @@ class HealpixMap(collections.abc.Sequence):
 
     @property
     def nside(self):
+        """
+        Return the nside (resolution) parameter of this HEALPix map
+        """
         self._set_metadata()
         return self._nside
 
     @property
     def dtype(self):
+        """
+        Return the numpy data type of this HEALPix map
+        """
         self._set_metadata()
         return self._dtype
 
     @property
     def units(self):
+        """
+        Return the unyt units of this HEALPix map
+        """
         self._set_metadata()
         return self._units
 
@@ -62,6 +76,18 @@ class HealpixMap(collections.abc.Sequence):
         return self._nr_pixels
 
     def read_pixels(self, start, stop):
+        """
+        Read the specified range of pixels from the map and return a numpy
+        array.
+
+        :param start: index of the first pixel to read
+        :type  start: int
+        :param stop: index just after the last pixel to read
+        :type  stop: int
+
+        :return: a numpy array with the specified pixel data
+        :rtype: numpy.ndarray
+        """
         self._set_metadata()
 
         if stop < start:
@@ -82,7 +108,7 @@ class HealpixMap(collections.abc.Sequence):
                 return pixels
             else:
                 return unyt.unyt_array(pixels, self._units)
-            
+
         # Determine which files to read
         nr_files = len(self._filenames)
         first_file = start // self._pix_per_file
@@ -151,7 +177,19 @@ class HealpixMap(collections.abc.Sequence):
 
 
 class Shell(collections.abc.Mapping):
+    """
+    Dict-like container for all of the :class:`HealpixMap` instances
+    associated with a lightcone shell. Subscripting a :class:`Shell`
+    with a map name returns a :class:`HealpixMap`.
 
+    :param basedir: directory containing the lightcone outputs
+    :type  basedir: str
+    :param basename: name of the subdirectory for this lightcone (e.g. ``lightcone0``)
+    :type  basename: str
+    :param shell_nr: index of the lightcone shell to read
+    :type  shell_nr: int
+
+    """
     def __init__(self, basedir, basename, shell_nr):
 
         # Find all files that make up this shell
@@ -159,13 +197,13 @@ class Shell(collections.abc.Mapping):
         file_nr = 0
         nr_files = 1
         while file_nr < nr_files:
-            fname = ("%s/%s_shells/shell_%d/%s.shell_%d.%d.hdf5" % 
+            fname = ("%s/%s_shells/shell_%d/%s.shell_%d.%d.hdf5" %
                      (basedir, basename, shell_nr, basename, shell_nr, file_nr))
             self.filenames.append(fname)
             if file_nr == 0:
                 with h5py.File(fname, "r") as infile:
                     nr_files = int(infile["Shell"].attrs["nr_files_per_shell"])
-                    length_unit_cgs = float(infile["Units"].attrs["Unit length in cgs (U_L)"])                        
+                    length_unit_cgs = float(infile["Units"].attrs["Unit length in cgs (U_L)"])
                     self.comoving_inner_radius = infile["Shell"].attrs["comoving_inner_radius"][0]
                     self.comoving_outer_radius = infile["Shell"].attrs["comoving_outer_radius"][0]
                     if unyt is not None:
@@ -195,7 +233,17 @@ class Shell(collections.abc.Mapping):
 
 
 class ShellArray(collections.abc.Sequence):
+    """
+    Sequence-like container for a set of lightcone shells. This class is
+    the recommended way to read lightcone HEALPix maps.
 
+    A :class:`ShellArray` can be indexed with an integer to return a :class:`Shell`.
+
+    :param basedir: directory containing the lightcone outputs
+    :type  basedir: str
+    :param basename: name of the subdirectory for this lightcone (e.g. ``lightcone0``)
+    :type  basename: str
+    """
     def __init__(self, basedir, basename):
 
         # Get number of shells from the index file
@@ -205,13 +253,13 @@ class ShellArray(collections.abc.Sequence):
 
         self.basedir = basedir
         self.basename = basename
-            
+
         # Creating a Shell instance involves reading a file, so we don't
         # initialize shells until they're accessed.
         self._shell = []
         for shell_nr in range(self.nr_shells):
             self._shell.append(None)
-        
+
     def __getitem__(self, index):
         # Initialize shell on access, if we didn't already
         if self._shell[index] is None:
@@ -247,7 +295,7 @@ def combine_healpix_maps(indir, basename, shell_nr, outdir):
 
     # Read the input unit information: this has the M, L, T etc units in cgs
     input_units_cgs = lightcone_io.units.read_cgs_units(infile)
-    
+
     # Get list of datasets
     datasets = []
     for name in infile:
@@ -279,7 +327,7 @@ def combine_healpix_maps(indir, basename, shell_nr, outdir):
         for attr_name, attr_value in corrections.items():
             print("  Setting attribute ", attr_name, " to ", attr_value)
             outfile[name].attrs[attr_name] = attr_value
-            
+
     # Close the input file
     infile.close()
 
@@ -287,12 +335,12 @@ def combine_healpix_maps(indir, basename, shell_nr, outdir):
     offset = 0
     file_nr = 0
     while offset < number_of_pixels:
-        
+
         # Open the next input file
         inname = map_file_name(indir, basename, shell_nr, file_nr)
         infile = h5py.File(inname, "r")
         print("Opened input file to copy pixel data: %s" % inname)
-        
+
         # Copy pixel data from this file
         local_pixels = None
         for name in datasets:
@@ -304,7 +352,7 @@ def combine_healpix_maps(indir, basename, shell_nr, outdir):
             else:
                 if local_pixels != dset.shape[0]:
                     raise Exception("All maps must be the same size!")
-    
+
             # Copy the pixel data for this map
             outfile[name][offset:offset+local_pixels] = infile[name][:]
 
@@ -319,7 +367,7 @@ def combine_healpix_maps(indir, basename, shell_nr, outdir):
 
 
 def fetch_pixels(indir, basename, shell_nr, dataset):
-    
+
     max_per_fetch = 10*1024*1024
 
     # Loop over input files
@@ -355,7 +403,7 @@ def fetch_pixels(indir, basename, shell_nr, dataset):
 
 
 def compare_healpix_maps(indir1, indir2, basename, shell_nr, dataset):
-    
+
     # Compute hash of first map
     map1 = fetch_pixels(indir1, basename, shell_nr, dataset)
     map1_hash = hashlib.sha256()

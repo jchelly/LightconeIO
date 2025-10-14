@@ -1,0 +1,8 @@
+h5py
+numpy
+mpi4py
+unyt
+healpy
+virgodc
+scipy
+tqdm
