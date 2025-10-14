@@ -39,6 +39,25 @@ part_type_names = [
     ]
 
 
+def redshift_ranges(snap_z, first_snap, last_snap):
+    """
+    Given a dict of snapshot redshifts, assign a redshift range to each
+    snapshot which extends half way to adjacent snasphots.
+    """
+    z1 = {}
+    z2 = {}
+    for snap_nr in range(first_snap, last_snap+1):
+        if snap_nr == first_snap:
+            z2[snap_nr] = snap_z[first_snap]
+        else:
+            z2[snap_nr] = 0.5*(snap_z[snap_nr-1]+snap_z[snap_nr])
+        if snap_nr == last_snap:
+            z1[snap_nr] = snap_z[last_snap]
+        else:
+            z1[snap_nr] = 0.5*(snap_z[snap_nr]+snap_z[snap_nr+1])
+    return z1, z2
+
+
 def attributes_from_units(units):
     """
     Given a unyt.Unit object, generate SWIFT dataset attributes
@@ -117,15 +136,21 @@ def match_black_holes(args):
     filename = f"{args.lightcone_dir}/{args.lightcone_base}_particles/{args.lightcone_base}_0000.0.hdf5"
     lightcone = pr.IndexedLightcone(filename, comm=comm)
 
-    # Get simulation box size and unit system from a snapshot file.
-    # HBT output specifies how to convert its chosen units to Mpc and Msolar so
-    # we need the snapshot unit system to interpret the catalogues using SWIFT's
-    # physical constants for consistency.
     if comm_rank == 0:
+        # Get simulation box size and unit system from a snapshot file.
+        # HBT output specifies how to convert its chosen units to Mpc and Msolar so
+        # we need the snapshot unit system to interpret the catalogues using SWIFT's
+        # physical constants for consistency.
         filename = args.snapshot_format.format(snap_nr=args.last_sim_snap, file_nr=0)
         with h5py.File(filename, "r") as infile:
             boxsize_no_units = infile["Header"].attrs["BoxSize"][0]
             swift_unit_registry = virgo.formats.swift.soap_unit_registry_from_snapshot(infile)
+        # Read all snapshot redshifts
+        redshifts = {}
+        for snap_nr in range(args.first_sim_snap, args.last_sim_snap+1):
+            filename = args.snapshot_format.format(snap_nr=snap_nr, file_nr=0)
+            with h5py.File(filename, "r") as infile:
+                redshifts[snap_nr] = float(infile["Header"].attrs["Redshift"][0])
     else:
         boxsize_no_units = None
         swift_unit_registry = None
@@ -142,6 +167,9 @@ def match_black_holes(args):
         halo_cat = hc.HBTplusCatalogue(args.halo_format, args.snapshot_format, args.first_sim_snap, args.last_sim_snap)
     else:
         raise ValueError("Unrecognized value for --halo-type option")
+
+    # Get the redshift range associated with each snapshot
+    all_z1, all_z2 = redshift_ranges(halo_cat.redshift, args.first_sim_snap, args.last_sim_snap)
 
     # Loop over snapshots
     halos_so_far = 0
@@ -168,15 +196,8 @@ def match_black_holes(args):
         # Each snapshot populates a redshift range which reaches half way to adjacent snapshots
         # (range is truncated for the first and last snapshots)
         z_snap = halo_cat.redshift[snap_nr]
-        if snap_nr == args.first_sim_snap:
-            z2 = halo_cat.redshift[args.first_sim_snap]
-        else:
-            z2 = 0.5*(halo_cat.redshift[snap_nr-1]+halo_cat.redshift[snap_nr])
-        if snap_nr == args.last_sim_snap:
-            z1 = halo_cat.redshift[args.last_sim_snap]
-        else:
-            z1 = 0.5*(halo_cat.redshift[snap_nr]+halo_cat.redshift[snap_nr+1])
-
+        z1 = all_z1[snap_nr]
+        z2 = all_z2[snap_nr]
         message(f"  Using {nr_halos_in_slice_all} halos at z={z_snap:.3f} to populate range z={z1:.3f} to z={z2:.3f}")
 
         # Read in the lightcone BH particle positions and IDs in this redshift range
@@ -307,6 +328,20 @@ def match_black_holes(args):
         total_halos_prev_ranks = comm.scan(total_halos_this_rank) - total_halos_this_rank
         first_halo_in_pixel = np.cumsum(halos_per_pixel, dtype=np.int64) + total_halos_prev_ranks
         phdf5.collective_write(index_group, "FirstHaloInPixel", first_halo_in_pixel, gzip=6, comm=comm)
+
+        # Write out the range of redshifts associated with each snapshot
+        snap_index = np.arange(args.first_sim_snap, args.last_sim_snap+1)
+        z_min = np.asarray([all_z1[sn] for sn in snap_index], dtype=float)
+        z_max = np.asarray([all_z2[sn] for sn in snap_index], dtype=float)
+        z_snap = np.asarray([halo_cat.redshift[sn] for sn in snap_index], dtype=float)
+        snap_group = outfile.create_group("Snapshots")
+        snap_group.attrs["SnapshotNumbers"] = snap_index
+        snap_group.attrs["SnapshotRedshifts"] = z_snap
+        snap_group.attrs["MinimumRedshifts"] = z_min
+        snap_group.attrs["MaximumRedshifts"] = z_max
+        snap_group.attrs["FirstSnapshotNumber"] = args.first_sim_snap
+        snap_group.attrs["LastSnapshotNumber"] = args.last_sim_snap
+        snap_group.attrs["ThisSnapshotNumber"] = snap_nr
 
         # Correct a-exponent of the lightcone positions (they're comoving)
         outfile["Lightcone/HaloCentre"].attrs["a-scale exponent"] = (1.0,)
