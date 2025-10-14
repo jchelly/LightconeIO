@@ -18,16 +18,15 @@ dependencies = [
     "scipy",
     "tqdm",
 ]
-
-[project.optional-dependencies]
-mpi = ["mpi4py", "virgodc>=1.0.1"]
-
 readme = "README.md"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: OS Independent",
 ]
+
+[project.optional-dependencies]
+mpi = ["mpi4py", "virgodc>=1.0.1"]
 
 [project.urls]
 Homepage = "https://github.com/jchelly/LightconeIO"
