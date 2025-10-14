@@ -301,6 +301,13 @@ def match_black_holes(args):
         index_group.attrs["order"] = args.order
         phdf5.collective_write(index_group, "NumHalosPerPixel", halos_per_pixel, gzip=6, comm=comm)
 
+        # Also write the offset to the first halo in each pixel. Note that halos_per_pixel
+        # is distributed over all MPI ranks.
+        total_halos_this_rank = np.sum(halos_per_pixel, dtype=np.int64)
+        total_halos_prev_ranks = comm.scan(total_halos_this_rank) - total_halos_this_rank
+        first_halo_in_pixel = np.cumsum(halos_per_pixel, dtype=np.int64) + total_halos_prev_ranks
+        phdf5.collective_write(index_group, "FirstHaloInPixel", first_halo_in_pixel, gzip=6, comm=comm)
+
         # Correct a-exponent of the lightcone positions (they're comoving)
         outfile["Lightcone/HaloCentre"].attrs["a-scale exponent"] = (1.0,)
         outfile.close()
