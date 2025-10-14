@@ -1,5 +1,7 @@
 #!/bin/env python
 
+import unyt
+
 #
 # Unit information which may be missing from lightcones
 #

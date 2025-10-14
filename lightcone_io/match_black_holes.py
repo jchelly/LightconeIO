@@ -335,13 +335,16 @@ def match_black_holes(args):
         z_max = np.asarray([all_z2[sn] for sn in snap_index], dtype=float)
         z_snap = np.asarray([halo_cat.redshift[sn] for sn in snap_index], dtype=float)
         snap_group = outfile.create_group("Snapshots")
-        snap_group.attrs["SnapshotNumbers"] = snap_index
-        snap_group.attrs["SnapshotRedshifts"] = z_snap
-        snap_group.attrs["MinimumRedshifts"] = z_min
-        snap_group.attrs["MaximumRedshifts"] = z_max
-        snap_group.attrs["FirstSnapshotNumber"] = args.first_sim_snap
-        snap_group.attrs["LastSnapshotNumber"] = args.last_sim_snap
-        snap_group.attrs["ThisSnapshotNumber"] = snap_nr
+        snap_group.attrs["snapshot_numbers"] = snap_index
+        snap_group.attrs["snapshot_redshifts"] = z_snap
+        snap_group.attrs["minimum_redshifts"] = z_min
+        snap_group.attrs["maximum_redshifts"] = z_max
+        snap_group.attrs["first_snapshot_number"] = args.first_sim_snap
+        snap_group.attrs["last_snapshot_number"] = args.last_sim_snap
+        snap_group.attrs["this_snapshot_number"] = snap_nr
+
+        # Write a list of property names to the file
+        outfile["Lightcone"].attrs["property_names"] = list(halo_slice.keys())
 
         # Correct a-exponent of the lightcone positions (they're comoving)
         outfile["Lightcone/HaloCentre"].attrs["a-scale exponent"] = (1.0,)

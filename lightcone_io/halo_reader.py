@@ -2,6 +2,8 @@
 
 import numpy as np
 import h5py
+import healpy as hp
+import unyt
 
 from .particle_reader import merge_cells
 from .units import units_from_attributes
@@ -24,6 +26,18 @@ class HaloLightconeFile:
         self._first_halo_in_pixel = self._file["Index/FirstHaloInPixel"][...]
         self._nside = int(self._file["Index"].attrs["nside"])
         self._order = str(self._file["Index"].attrs["order"])
+        self._props = None
+
+    @property
+    def properties(self):
+        """
+        Return a list of all halo property names in this file. These are the
+        values which are valid to pass to the properties parameter of
+        :py:meth:`read_halos_in_pixels` and :py:meth:`read_halos_in_radius`.
+        """
+        if self._props is None:
+            self._props = self._file["Lightcone"].attrs["property_names"]
+        return self._props
 
     def get_pixels_in_radius(self, vector, radius):
         """
@@ -47,7 +61,7 @@ class HaloLightconeFile:
         pixels.sort()
         return pixels
 
-    def read_halos_in_pixels(pixels, properties):
+    def read_halos_in_pixels(self, pixels, properties):
         """
         Read halos in the specified HEALPix pixels and return the
         requested halo properties in a dict of numpy arrays.
@@ -100,7 +114,7 @@ class HaloLightconeFile:
 
         return result
 
-    def read_halos_in_radius(vector, radius, properties):
+    def read_halos_in_radius(self, vector, radius, properties):
         """
         Read halos in an angular radius around the specified line of sight
         vector and return the requested halo properties in a dict of numpy
