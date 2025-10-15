@@ -115,7 +115,7 @@ class HaloLightconeFile:
             # Read data for the selected pixels
             i = 0
             for offset, count in zip(offsets, counts):
-                data[i:i+count,:] = dataset[offset:offset+count,:]
+                data[i:i+count,...] = dataset[offset:offset+count,...]
                 i += count
             assert i == nr_halos
             result[name] = data
