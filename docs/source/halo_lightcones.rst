@@ -34,9 +34,10 @@ example, we can do this::
   # Read the data
   halo_props = halos.read(properties)
 
-This returns a dict of numpy arrays with the halo properties. Since
-the halos are sorted by HEALPix pixel, it's possible to extract halos
-close to a specified position on the sky::
+This returns a dict of unyt arrays, which are the halo properties with
+unit information attached. Since the halos are sorted by HEALPix
+pixel, it's possible to extract halos close to a specified position on
+the sky::
 
   # Line of sight vector specifying a point on the sky
   vector = (1.0, 0.0, 0.0)
@@ -51,5 +52,5 @@ close to a specified position on the sky::
   # Read the data
   halo_props = halos.read_halos_in_radius(vector, radius, properties)
 
-Again, this returns a dict of numpy arrays with the halo properties,
+Again, this returns a dict of unyt arrays with the halo properties,
 but only halos in the specified patch of sky are included.
