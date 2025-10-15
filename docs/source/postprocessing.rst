@@ -77,12 +77,13 @@ The module ``lightcone.particle_halo_ids`` can compute halo membership
 for particles in the particle lightcone outputs. It works as follows:
 
   * The full halo lightcone is read in
-  * For each halo in the halo lightcone we look up a mass and radius from SOAP
-    (so SOAP must have been run on all snapshots)
+  * For each halo in the halo lightcone we look up a mass and radius
+    from SOAP (so SOAP must have been run on all snapshots)
   * The lightcone particles are read in
-  * Particles within the radius of each halo in the halo lightcone are flagged
-    as belonging to that halo
-  * For each particle in the lightcone we write out the associated halo ID and mass
+  * Particles within the radius of each halo in the halo lightcone are
+    flagged as belonging to that halo
+  * For each particle in the lightcone we write out the associated
+    halo ID and mass
 
 The mass and radius to use are specified by the name of the SOAP group
 which they should be read from (e.g. ``--soap-so-name="SO/200_crit"``)
@@ -94,9 +95,13 @@ ways we can decide which halo to assign the particle to. These are
 specified using the command line flag ``--overlap-method``. Possible
 values are
 
-  * ``fractional-radius``: for each particle we compute the distance to the halo centre in units of the halo radius. Particles are assigned to the halo for which this value is lowest.
-  * ``most-massive``: particles within the radius of multiple halos are assigned to the most massive halo
-  * ``least-massive``: particles within the radius of multiple halos are assigned to the least massive halo
+  * ``fractional-radius``: for each particle we compute the distance
+    to the halo centre in units of the halo radius. Particles are
+    assigned to the halo for which this value is lowest.
+  * ``most-massive``: particles within the radius of multiple halos
+    are assigned to the most massive halo
+  * ``least-massive``: particles within the radius of multiple halos
+    are assigned to the least massive halo
 
 This is also parallelized using mpi4py. To run it::
 
@@ -124,3 +129,54 @@ This is also parallelized using mpi4py. To run it::
 
 There is a batch script to run this code on FLAMINGO on COSMA-8 in
 ``./scripts/FLAMINGO/halo_ids_L1000N1800.sh``.
+
+Making halo lighcones
+---------------------
+
+An approximate halo lightcone can be constructed from a series of
+snapshot halo catalogues by interpolating the halos between snapshots
+to determine when the halo (or any periodic replication of the halo)
+crosses the observer's lightcone. However, accurately interpolating
+halo positions is difficult so instead we can use black hole particles
+from the black hole particle lightcone output as tracers of the halo
+positions.
+
+The module ``lightcone_io.match_black_holes`` implements this. Each
+simulation snapshot is assigned a redshift range which extends half
+way to the next and previous snapshots. For each halo in the snapshot
+we pick a black hole particle ID to trace the halo. Wherever this
+particle appears in the particle lightcone, we place a copy of the
+halo. This is done in such a way as to preserve the vector between the
+halo's most bound particle and the chosen tracer particle.
+
+The black hole tracer is chosen to be the most bound black hole which
+also exists at the next and previous snapshots. This is intended to
+minimize cases where a halo is lost because its black hole did not
+exist at the time of lightcone crossing.
+
+Note that this method has some significant drawbacks:
+
+  * Evolution of the halos between the snapshot and the time of
+    lightcone crossing is neglected, so the catalogue becomes less
+    accurate at redshifts which are not close to a snapshot.
+  * Halos with no black hole will be missing from the halo
+    lightcone. This affects almost all halos below the black hole
+    seeding halo mass. Black holes may also be lost from more massive
+    halos (particularly satellite subhalos).
+
+This module also uses mpi4py, so the command line to run it will be
+along the lines of::
+
+  mpirun -- python3 -m mpi4py -m lightcone_io.match_black_holes \
+       "${halo_format}" ${first_sim_snap} ${last_sim_snap} \
+        ${first_snap_to_process} {last_snap_to_process} \
+        "${lightcone_dir}" "lightcone${lightcone_nr}" "${snapshot_format}" "${membership_format}" "${output_dir}" \
+       --halo-type=HBTplus \
+       --pass-through="InputHalos/IsCentral,InputHalos/NumberOfBoundParticles,BoundSubhalo/TotalMass,InputHalos/HBTplus/TrackId"
+
+For descriptions of the command line parameters above, run::
+
+  python3 -m lightcone_io.match_black_holes --help
+
+There is an example script to run the code on FLAMINGO on Cosma-8 in
+``scripts/FLAMINGO/match_bh_L1000N1800.sh``.
