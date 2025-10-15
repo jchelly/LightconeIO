@@ -8,5 +8,6 @@ Lightcone I/O module documentation
    installation
    healpix_maps
    reading_particles
+   halo_lightcones
    postprocessing
    api

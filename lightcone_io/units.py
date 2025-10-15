@@ -1,5 +1,7 @@
 #!/bin/env python
 
+import unyt
+
 #
 # Unit information which may be missing from lightcones
 #
@@ -39,7 +41,7 @@ def read_cgs_units(infile):
     for name in unit_cgs_name:
         units_cgs[name] = infile["Units"].attrs[unit_cgs_name[name]][0]
     return units_cgs
-    
+
 def compute_cgs_factor(exponents, units_cgs):
     """
     Compute conversion to CGS using the Units group and the dimensions of a dataset
@@ -77,9 +79,9 @@ def cgs_expression(exponents, units_cgs):
         else:
             expression += ("%s^%7.4f " % (cgs_unit[base_unit], power))
     expression += "]"
-    
+
     return expression
-    
+
 def correct_units(dset, name, units_cgs):
     """
     Return corrected unit attributes for the specified dataset as a dict,
@@ -98,7 +100,7 @@ def correct_units(dset, name, units_cgs):
             found_exponent = dset.attrs[base_unit+" exponent"][0]
             if found_exponent != expected_exponent:
                 corrections[base_unit+" exponent"] = [expected_exponent,]
-        
+
         # If any exponents changed, need to update CGS factor and expression
         if len(corrections) > 0:
 
@@ -108,3 +110,12 @@ def correct_units(dset, name, units_cgs):
             corrections["Expression for physical CGS units"] = cgs_expression(missing_units[name], units_cgs)
 
     return corrections
+
+def units_from_attributes(dset):
+    cgs_factor = dset.attrs["Conversion factor to CGS (not including cosmological corrections)"][0]
+    U_I = dset.attrs["U_I exponent"][0]
+    U_L = dset.attrs["U_L exponent"][0]
+    U_M = dset.attrs["U_M exponent"][0]
+    U_T = dset.attrs["U_T exponent"][0]
+    U_t = dset.attrs["U_t exponent"][0]
+    return cgs_factor * (unyt.A**U_I) * (unyt.cm**U_L) * (unyt.g**U_M) * (unyt.K**U_T) * (unyt.s**U_t)

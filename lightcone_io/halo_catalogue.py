@@ -39,14 +39,14 @@ class SOAPCatalogue:
         self.halo_format = halo_format
         self.description = {}
         self.description.update(extra_descriptions)
-        
+
     def read(self, snap_nr, to_read):
         """
         Read in SOAP halos for the specified snapshot.
 
         Returns a dict of unyt arrays with units constructed from attributes.
         """
-        
+
         # Create unit registry for this snapshot
         if comm_rank == 0:
             with h5py.File(self.halo_format.format(snap_nr=snap_nr), "r") as infile:
@@ -54,7 +54,7 @@ class SOAPCatalogue:
         else:
             reg = None
         reg = comm.bcast(reg)
-                
+
         # Read the catalogue
         filename = self.halo_format.format(snap_nr=snap_nr)
         mf = phdf5.MultiFile(filename, file_idx=(0,), comm=comm)
@@ -64,12 +64,12 @@ class SOAPCatalogue:
         for name in data:
             if "Description" in data[name].attrs:
                 self.description[name] = data[name].attrs["Description"]
-        
+
         # Convert to unyt arrays
         for name in data:
             units = swift.soap_units_from_attributes(data[name].attrs, reg)
             data[name] = unyt.unyt_array(data[name], units=units, registry=reg)
-        
+
         return data
 
 
@@ -104,7 +104,7 @@ class HBTplusCatalogue:
         self.swift_format = swift_format
         self.description = {}
         self.description.update(extra_descriptions)
-        
+
     def read(self, snap_nr, to_read):
         """
         Read in HBTplus halos for the specified snapshot.
@@ -121,7 +121,7 @@ class HBTplusCatalogue:
         else:
             registry = None
         registry = comm.bcast(registry)
-        
+
         # Make a format string for the sub-files in this snapshot
         pf = virgo.util.partial_formatter.PartialFormatter()
         filenames = pf.format(self.halo_format, snap_nr=snap_nr, file_nr=None)
@@ -145,7 +145,7 @@ class HBTplusCatalogue:
         swift_msun = unyt.Unit("swift_msun", registry=registry)
         hbt_length_unit = (self.units["LengthInMpch"] * swift_cmpc/h).to(swift_cmpc)
         hbt_mass_unit = (self.units["MassInMsunh"] * swift_msun/h).to(swift_msun)
-        
+
         # Extract the fields we want as unyt arrays using SOAP naming conventions
         data = {}
         for name in to_read:
@@ -174,7 +174,7 @@ class HBTplusCatalogue:
                 self.description[name] = "HBTplus TrackId of this halo"
             else:
                 raise KeyError("Unsupported HBT property name!")
-        
+
         return data
 
 
@@ -194,7 +194,7 @@ if __name__ == "__main__":
 
     # Quantities we need to read in
     to_read = ("InputHalos/cofp", "InputHalos/index")
-        
+
     data = cat.read(10, to_read)
 
     if comm_rank == 0:
