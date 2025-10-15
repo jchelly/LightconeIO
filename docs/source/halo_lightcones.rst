@@ -42,6 +42,7 @@ close to a specified position on the sky::
   vector = (1.0, 0.0, 0.0)
 
   # Angular radius around this point (in radians)
+  import numpy as np
   radius = np.radians(10.0)
 
   # List of halo properties to read

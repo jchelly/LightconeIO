@@ -93,7 +93,7 @@ class HaloLightconeFile:
         else:
             # We're reading all of the halos, so we just have one range to read
             offsets = np.asarray((0,), dtype=int)
-            counts = np.asarray((hp.nside2npix(self._nside),), dtype=int)
+            counts = np.asarray((np.sum(self._num_halos_per_pixel),), dtype=int)
 
         # Compute expected number of halos
         nr_halos = sum(counts)
