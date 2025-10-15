@@ -130,8 +130,10 @@ This is also parallelized using mpi4py. To run it::
 There is a batch script to run this code on FLAMINGO on COSMA-8 in
 ``./scripts/FLAMINGO/halo_ids_L1000N1800.sh``.
 
-Making halo lighcones
----------------------
+.. _halo_lightcones:
+
+Making halo lightcones
+----------------------
 
 An approximate halo lightcone can be constructed from a series of
 snapshot halo catalogues by interpolating the halos between snapshots
@@ -140,6 +142,10 @@ crosses the observer's lightcone. However, accurately interpolating
 halo positions is difficult so instead we can use black hole particles
 from the black hole particle lightcone output as tracers of the halo
 positions.
+
+Black holes are used as tracers because they are present in most well
+resolved halos but less numerous than other particle types so they can
+be output to high redshift without generating too much data to store.
 
 The module ``lightcone_io.match_black_holes`` implements this. Each
 simulation snapshot is assigned a redshift range which extends half
@@ -154,15 +160,15 @@ also exists at the next and previous snapshots. This is intended to
 minimize cases where a halo is lost because its black hole did not
 exist at the time of lightcone crossing.
 
-Note that this method has some significant drawbacks:
-
-  * Evolution of the halos between the snapshot and the time of
-    lightcone crossing is neglected, so the catalogue becomes less
-    accurate at redshifts which are not close to a snapshot.
-  * Halos with no black hole will be missing from the halo
-    lightcone. This affects almost all halos below the black hole
-    seeding halo mass. Black holes may also be lost from more massive
-    halos (particularly satellite subhalos).
+.. warning::
+  This method has some significant drawbacks:
+    * Evolution of the halos between the snapshot and the time of
+      lightcone crossing is neglected, so the catalogue becomes less
+      accurate at redshifts which are not close to a snapshot.
+    * Halos with no black hole will be missing from the halo
+      lightcone. This affects almost all halos below the black hole
+      seeding halo mass. Black holes may also be lost from more massive
+      halos (particularly satellite subhalos).
 
 This module also uses mpi4py, so the command line to run it will be
 along the lines of::

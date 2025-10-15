@@ -66,26 +66,34 @@ class HaloLightconeFile:
         Read halos in the specified HEALPix pixels and return the
         requested halo properties in a dict of numpy arrays.
 
-        :param pixels: array of HEALPix pixel indexes to read
-        :type  pixels: numpy.ndarray
+        :param pixels: array of HEALPix pixel indexes to read, or None to read all
+        :type  pixels: numpy.ndarray, or None
         :param properties: list of halo properties (i.e. HDF5 dataset names) to read
         :type  properties: list of str
 
         :return: dict of arrays with the halo properties
         :rtype:  dict of numpy.ndarray
         """
-        if np.any(pixels[1:] <= pixels[:-1]):
-            raise RuntimeError("Pixel indexes must be unique and ascending!")
 
-        # Discard any selected pixels with no halos
-        pixels = pixels[self._num_halos_per_pixel[pixels] > 0]
+        if pixels is not None:
+            # Determine ranges of halos to read
+            if np.any(pixels[1:] <= pixels[:-1]):
+                raise RuntimeError("Pixel indexes must be unique and ascending!")
 
-        # Compute offset to first halo and number of halos per pixel
-        offsets = self._first_halo_in_pixel[pixels]
-        counts  = self._num_halos_per_pixel[pixels]
+            # Discard any selected pixels with no halos
+            pixels = pixels[self._num_halos_per_pixel[pixels] > 0]
 
-        # Merge any consecutive ranges to read
-        offsets, counts = merge_cells(offsets, counts)
+            # Compute offset to first halo and number of halos per pixel
+            offsets = self._first_halo_in_pixel[pixels]
+            counts  = self._num_halos_per_pixel[pixels]
+
+            # Merge any consecutive ranges to read
+            offsets, counts = merge_cells(offsets, counts)
+
+        else:
+            # We're reading all of the halos, so we just have one range to read
+            offsets = np.asarray((0,), dtype=int)
+            counts = np.asarray((hp.nside2npix(self._nside),), dtype=int)
 
         # Compute expected number of halos
         nr_halos = sum(counts)
@@ -133,3 +141,16 @@ class HaloLightconeFile:
         """
         pixels = self.get_pixels_in_radius(vector, radius)
         return self.read_halos_in_pixels(pixels, properties)
+
+    def read_halos(self, properties):
+        """
+        Read all halos in this file and return the requested halo
+        properties in a dict of numpy arrays.
+
+        :param properties: list of halo properties (i.e. HDF5 dataset names) to read
+        :type  properties: list of str
+
+        :return: dict of arrays with the halo properties
+        :rtype:  dict of numpy.ndarray
+        """
+        return self.read_halos_in_pixels(None, properties)
