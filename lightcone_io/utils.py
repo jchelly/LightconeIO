@@ -54,6 +54,7 @@ def read_slices(dataset, starts, counts, result=None):
     file_shape = file_space_id.get_simple_extent_dims()
 
     # Select the slices to read
+    nr_in_first_dim = 0
     file_space_id.select_none()
     for start, count in zip(starts, counts):
         if count > 0:
@@ -61,9 +62,9 @@ def read_slices(dataset, starts, counts, result=None):
             slice_start = tuple([start,]+[0 for fs in file_shape[1:]])
             slice_count = tuple([count,]+[i for fs in file_shape[1:]])
             file_space_id.select_hyperslab(slice_start, slice_count, op=h5py.h5s.SELECT_OR)
+            nr_in_first_dim += count
 
     # Allocate the output array, if necessary
-    nr_in_first_dim = np.sum(slice_count)
     result_shape = [nr_in_first_dim,]+list(file_shape[1:])
     result_shape = tuple([int(rs) for rs in result_shape])
     if result is None:
