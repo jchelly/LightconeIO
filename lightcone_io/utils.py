@@ -1,5 +1,6 @@
 #!/bin/env python
 
+import h5py
 import numpy as np
 
 def read_slices(dataset, starts, counts, result=None):
@@ -54,16 +55,17 @@ def read_slices(dataset, starts, counts, result=None):
 
     # Select the slices to read
     file_space_id.select_none()
-    for start, count in zip(start, counts):
+    for start, count in zip(starts, counts):
         if count > 0:
             # Select this slice
             slice_start = tuple([start,]+[0 for fs in file_shape[1:]])
             slice_count = tuple([count,]+[i for fs in file_shape[1:]])
-            file_space_id.select_hyperslab(slice_start, slice_count, op=h5s.SELECT_OR)
+            file_space_id.select_hyperslab(slice_start, slice_count, op=h5py.h5s.SELECT_OR)
 
     # Allocate the output array, if necessary
     nr_in_first_dim = np.sum(slice_count)
     result_shape = [nr_in_first_dim,]+list(file_shape[1:])
+    result_shape = tuple([int(rs) for rs in result_shape])
     if result is None:
         result = np.ndarray(result_shape, dtype=dataset.dtype)
 
@@ -83,6 +85,6 @@ def read_slices(dataset, starts, counts, result=None):
     # If we selected any elements, read the data
     if nr_in_first_dim > 0:
         mem_space_id = h5py.h5s.create_simple(result_shape)
-        dataset_id.read(mem_space_id, file_space_id, data)
+        dataset_id.read(mem_space_id, file_space_id, result)
 
-    return data
+    return result
