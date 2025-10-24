@@ -17,11 +17,21 @@ class HaloLightconeFile:
     a low resolution HEALPix map so that regions on the sky can be
     extracted efficiently.
 
+    If the name of the SOAP file which was used to generate the lightcone
+    halo catalogue is supplied, then it will be possible to look up extra
+    halo properties from SOAP.
+
     :param filename: Name of the halo lightcone file to open
     :type  filename: str
+    :param soap_filename: Name of the SOAP output with extra halo properties
+    :type  soap_filename: str
     """
-    def __init__(self, filename):
+    def __init__(self, filename, soap_filename=None):
         self._file = h5py.File(filename, "r")
+        if soap_filename is not None:
+            self._soap_file = h5py.File(soap_filename, "r")
+        else:
+            self._soap_file = None
         self._num_halos_per_pixel = self._file["Index/NumHalosPerPixel"][...]
         self._first_halo_in_pixel = self._file["Index/FirstHaloInPixel"][...]
         self._nside = int(self._file["Index"].attrs["nside"])
@@ -34,6 +44,9 @@ class HaloLightconeFile:
         Return a list of all halo property names in this file. These are the
         values which are valid to pass to the properties parameter of
         :py:meth:`read_halos_in_pixels` and :py:meth:`read_halos_in_radius`.
+
+        Note that this does not include any additional properties which we
+        may be able to read from SOAP.
         """
         if self._props is None:
             self._props = self._file["Lightcone"].attrs["property_names"]
@@ -64,7 +77,10 @@ class HaloLightconeFile:
     def read_halos_in_pixels(self, pixels, properties):
         """
         Read halos in the specified HEALPix pixels and return the
-        requested halo properties in a dict of numpy arrays.
+        requested halo properties in a dict of unyt arrays.
+
+        If a SOAP filename was specifed then we'll check the SOAP file for any
+        halo properties which are not present in the halo lightcone file.
 
         :param pixels: array of HEALPix pixel indexes to read, or None to read all
         :type  pixels: numpy.ndarray, or None
@@ -72,8 +88,29 @@ class HaloLightconeFile:
         :type  properties: list of str
 
         :return: dict of arrays with the halo properties
-        :rtype:  dict of numpy.ndarray
+        :rtype:  dict of unyt.unyt_array
         """
+
+        # Name of the dataset in the halo lightcone which specifies the
+        # corresponding index in SOAP.
+        soap_index_name = "InputHalos/SOAPIndex"
+
+        # Determine which, if any, properties are to be read from SOAP and
+        # which are to be read from the lighcone.
+        lightcone_properties = []
+        soap_properties = []
+        for name in properties:
+            if name in self._file:
+                lightcone_properies.append(name)
+            elif self._soap_file is not None and name in self._soap_file:
+                soap_properies.append(name)
+            else:
+                raise KeyError(f"Unable to locate halo property: {name}")
+
+        # If we're reading anything from SOAP we'll need the SOAP index of each
+        # halo, so make sure it's in the list of things to read
+        if len(soap_properties) > 0 and soap_index_name not in lightcone_properties:
+            lightcone_properies.append(soap_index_name)
 
         if pixels is not None:
             # Determine ranges of halos to read
@@ -98,9 +135,9 @@ class HaloLightconeFile:
         # Compute expected number of halos
         nr_halos = sum(counts)
 
-        # Loop over halo properties to read
+        # Loop over halo properties to read from the lightcone
         result = {}
-        for name in properties:
+        for name in lightcone_properties:
 
             # Locate the dataset with this property
             dataset = self._file[name]
@@ -120,12 +157,47 @@ class HaloLightconeFile:
             assert i == nr_halos
             result[name] = data
 
+        # Now read extra properties from SOAP, if necessary
+        if len(soap_properties) > 0:
+
+            # Get the index of each selected lightcone halo, as a plain ndarray.
+            # This will be in no particular order and may contain duplicates
+            # due to preiodic replication.
+            soap_index = data[soap_index_name].value
+
+            # Get sorted, unique indexes in SOAP. Here inverse_index can be
+            # used to restore the original array from just the unique elements.
+            unique_soap_index, inverse_index = np.unique(soap_index, return_inverse=True)
+
+            # Loop over datasets to read from SOAP
+            for name in soap_properties:
+
+                # Locate the SOAP dataset with this property
+                dataset = self._soap_file[name]
+
+                # Determine output units for this dataset
+                units = units_from_attributes(dataset)
+
+                # Read the data into a numpy array. Here we read the full array
+                # and index it in memory. TODO: efficient indexed reads?
+                data = dataset[...][unique_soap_index,...]
+
+                # Put into halo lightcone order and add units
+                data = unyt.unyt_array(data[inverse_index,...], units)
+
+                # Store the result
+                result[name] = data
+
+        # If the SOAP index was not requested, don't return it
+        if soap_index_name in result and soap_index_name not in properties:
+            del result[soap_index_name]
+
         return result
 
     def read_halos_in_radius(self, vector, radius, properties):
         """
         Read halos in an angular radius around the specified line of sight
-        vector and return the requested halo properties in a dict of numpy
+        vector and return the requested halo properties in a dict of unyt
         arrays. May also return some halos slightly outside the radius
         because if we read a pixel we read all of the halos in it.
 
@@ -137,7 +209,7 @@ class HaloLightconeFile:
         :type  properties: list of str
 
         :return: dict of arrays with the halo properties
-        :rtype:  dict of numpy.ndarray
+        :rtype:  dict of unyt.unyt_array
         """
         pixels = self.get_pixels_in_radius(vector, radius)
         return self.read_halos_in_pixels(pixels, properties)
@@ -145,12 +217,12 @@ class HaloLightconeFile:
     def read_halos(self, properties):
         """
         Read all halos in this file and return the requested halo
-        properties in a dict of numpy arrays.
+        properties in a dict of unyt arrays.
 
         :param properties: list of halo properties (i.e. HDF5 dataset names) to read
         :type  properties: list of str
 
         :return: dict of arrays with the halo properties
-        :rtype:  dict of numpy.ndarray
+        :rtype:  dict of unyt.unyt_array
         """
         return self.read_halos_in_pixels(None, properties)
