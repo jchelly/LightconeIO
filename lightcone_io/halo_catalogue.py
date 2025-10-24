@@ -18,6 +18,7 @@ extra_descriptions = {
     "Lightcone/Redshift"   : "Redshift of the halo at the time of lightcone crossing",
     "Lightcone/SnapshotNumber" : "Snapshot number from which this halo was taken",
     "Lightcone/TracerPosition" : "Coordinates of the chosen tracer particle at lightcone crossing",
+    "InputHalos/SOAPIndex" : "Index of the halo in the input SOAP catalogue",
 }
 
 class SOAPCatalogue:
@@ -32,7 +33,7 @@ class SOAPCatalogue:
         if comm_rank == 0:
             for snap_nr in range(first_snap, last_snap+1):
                 with h5py.File(halo_format.format(snap_nr=snap_nr), "r") as infile:
-                    self.redshift[snap_nr] = float(infile["SWIFT/Cosmology"].attrs["Redshift"][0])
+                    self.redshift[snap_nr] = float(infile["Cosmology"].attrs["Redshift"][0])
         self.redshift = comm.bcast(self.redshift)
         self.first_snap = first_snap
         self.last_snap = last_snap
@@ -50,7 +51,7 @@ class SOAPCatalogue:
         # Create unit registry for this snapshot
         if comm_rank == 0:
             with h5py.File(self.halo_format.format(snap_nr=snap_nr), "r") as infile:
-                reg = swift.soap_unit_registry_from_snapshot(infile["SWIFT"])
+                reg = swift.soap_unit_registry_from_snapshot(infile)
         else:
             reg = None
         reg = comm.bcast(reg)
@@ -71,7 +72,8 @@ class SOAPCatalogue:
             data[name] = unyt.unyt_array(data[name], units=units, registry=reg)
 
         # Add an array with the index in the SOAP catalogue for each object.
-        # This is not the same as the index in HBT because SOAP ignores orphans.
+        # This is not the same as the index in HBT because SOAP ignores orphans
+        # and reorders the remaining halos.
         nr_halos = data[to_read[0]].shape[0]
         nr_prev_halos = comm.scan(nr_halos) - nr_halos
         soap_index = np.arange(nr_halos, dtype=int) + nr_prev_halos
