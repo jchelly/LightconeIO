@@ -5,7 +5,7 @@ import h5py
 import numpy as np
 import pytest
 
-from lightcone_io.utils import read_slices
+from lightcone_io.utils import read_slices, SlicedDatasetReader
 
 
 @pytest.fixture(scope='module', params=[(), (0,), (1,), (3,), (3,2)])
@@ -58,6 +58,30 @@ def test_read_slice(dataset, starts, counts):
     """
     # Use read_slices() to read the data
     data1 = read_slices(dataset, starts, counts)
+
+    # Try reading the slices directly with h5py
+    data2 = []
+    for s, c in zip(starts, counts):
+        data2.append(dataset[s:s+c,...])
+    if len(data2) > 0:
+        data2 = np.concatenate(data2, axis=0)
+    else:
+        shape = (0,)+dataset.shape[1:]
+        data2 = np.zeros(shape, dtype=dataset.dtype)
+
+    # Check the result
+    assert data1.shape == data2.shape
+    assert data1.dtype == data2.dtype
+    assert np.all(data1==data2)
+
+
+@pytest.mark.parametrize("starts,counts", test_cases)
+def test_sliced_dataset_reader(dataset, starts, counts):
+    """
+    Check that SlicedDatasetReader reads slices correctly
+    """
+    # Use SlicedDatasetReader to read the data
+    data1 = SlicedDatasetReader(starts, counts).read(dataset)
 
     # Try reading the slices directly with h5py
     data2 = []

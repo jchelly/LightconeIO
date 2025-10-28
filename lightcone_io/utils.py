@@ -184,9 +184,9 @@ class IndexedDatasetReader:
             self.unique_index, self.inverse_index = np.unique(index, return_inverse=True)
 
         # Every index is a range of length one. Merge any adjacent ranges.
-        self.starts, self.counts = merge_ranges(self.unique_index, np.ones(len(self.unique_index), dtype=int))
+        self.starts, self.counts = merge_slices(self.unique_index, np.ones(len(self.unique_index), dtype=int))
 
-    def read(dataset):
+    def read(self, dataset):
         """
         Read the specified indexes from a HDF5 dataset.
 
@@ -222,9 +222,9 @@ class SlicedDatasetReader:
         :type  counts: np.ndarray
         """
         # Merge and store any adjacent ranges
-        self.starts, self.counts = merge_ranges(starts, counts)
+        self.starts, self.counts = merge_slices(starts, counts)
 
-    def read(dataset):
+    def read(self, dataset):
         """
         Read the specified indexes from a HDF5 dataset.
 
