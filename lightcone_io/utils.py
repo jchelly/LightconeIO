@@ -3,6 +3,79 @@
 import h5py
 import numpy as np
 
+
+def validate_slices(starts, counts):
+    """
+    Sanity check the supplied array of slices
+
+    :param starts: 1D array with starting offset of each slice
+    :type  starts: np.ndarray
+    :param counts: 1D array with length of each slice
+    :type  counts: np.ndarray
+    """
+    if starts.shape != counts.shape:
+        raise RuntimeError("start and count arrays must be the same shape")
+    if len(starts.shape) != 1 or len(counts.shape) != 1:
+        raise RuntimeError("start and count arrays must be 1D")
+    if len(starts) > 1:
+        if np.any(starts[1:] < starts[:-1]):
+            raise RuntimeError("slices must be in ascending order of start index")
+        ends = starts + counts
+        if np.any(starts[1:] < ends[:-1]):
+            raise RuntimeError("slices must not overlap")
+    if np.any(counts < 0):
+        raise RuntimeError("slices must have non-negative counts")
+    if np.any(starts < 0):
+        # We don't support negative indexes
+        raise RuntimeError("slices must have non-negative starts")
+
+
+def merge_slices(starts, counts):
+    """
+    Given a set of slices where slice i starts at index starts[i] and contains
+    counts[i] elements, merge any adjacent slices and return new starts and
+    counts arrays.
+
+    :param starts: 1D array with starting offset of each slice
+    :type  starts: np.ndarray
+    :param counts: 1D array with length of each slice
+    :type  counts: np.ndarray
+
+    :return: new (starts, counts) tuple with the merged slices
+    :rtype: (numpy.ndarray, numpy.ndarray)
+    """
+
+    starts = np.asarray(starts, dtype=int)
+    counts = np.asarray(counts, dtype=int)
+
+    # First, eliminate any zero length slices
+    keep = counts > 0
+    starts = starts[keep]
+    ends = starts + counts[keep]
+
+    # Determine number of slices
+    nr_slices = len(starts)
+    if len(ends) != nr_slices:
+        raise ValueError("starts and counts arrays must be the same size!")
+
+    # Determine starts to keep: every starting offset which is NOT
+    # equal to the end of the previous slice. Always keep the first.
+    keep_start = np.ones(nr_slices, dtype=bool)
+    keep_start[1:] = (starts[1:] != ends[:-1])
+
+    # Determine ends to keep: every end offset which is NOT equal
+    # to the start of the next slice. Always keep the last one.
+    keep_end = np.ones(nr_slices, dtype=bool)
+    keep_end[:-1] = (ends[:-1] != starts[1:])
+
+    # Discard unwanted elements
+    assert len(starts) == len(ends)
+    starts = starts[keep_start]
+    counts = ends[keep_end] - starts
+
+    return starts, counts
+
+
 def read_slices(dataset, starts, counts, result=None):
     """
     Read the specified slices from a HDF5 dataset. Uses h5py low level calls
@@ -30,21 +103,10 @@ def read_slices(dataset, starts, counts, result=None):
     # Sanity check the slices
     starts = np.asarray(starts, dtype=int)
     counts = np.asarray(counts, dtype=int)
-    if starts.shape != counts.shape:
-        raise RuntimeError("start and count arrays must be the same shape")
-    if len(starts.shape) != 1 or len(counts.shape) != 1:
-        raise RuntimeError("start and count arrays must be 1D")
-    if len(starts) > 1:
-        if np.any(starts[1:] < starts[:-1]):
-            raise RuntimeError("slices must be in ascending order of start index")
-        ends = starts + counts
-        if np.any(starts[1:] < ends[:-1]):
-            raise RuntimeError("slices must not overlap")
-    if np.any(counts < 0):
-        raise RuntimeError("slices must have non-negative counts")
-    if np.any(starts < 0):
-        # We don't support negative indexes
-        raise RuntimeError("slices must have non-negative starts")
+    validate_slices(starts, counts)
+
+    # Merged any adjacent slices
+    starts, counts = merge_slices(starts, counts)
 
     # Get dataset handle
     dataset_id = dataset.id
@@ -88,4 +150,47 @@ def read_slices(dataset, starts, counts, result=None):
         mem_space_id = h5py.h5s.create_simple(result_shape)
         dataset_id.read(mem_space_id, file_space_id, result)
 
+    return result
+
+
+def read_indexes(dataset, index, sorted_and_unique=False):
+    """
+    Read the specified indexes from a HDF5 dataset. Here we assume that the
+    requested indexes are likely to include runs of consecutive values and so
+    can be efficiently handled using hyperslab reads. The array of indexes is
+    converted into (start, count) pairs and the dataset is read using
+    read_slices().
+
+    The supplied indexes are in the first dimension. We read all data in any
+    subsequent dimensions. Indexes must be unique and in ascending order if
+    sorted_and_unique is True.
+
+    :param dataset: HDF5 dataset to read from
+    :type  dataset: h5py.Dataset
+    :param index: 1D array with indexes to read in the first dimension
+    :type  index: np.ndarray
+    :param sorted_and_unique: set to True if index values are sorted and unique
+    :type  sorted_and_unique: bool
+
+    :return: a numpy array with the data read from the dataset
+    :rtype: numpy.ndarray
+    """
+
+    # Get sorted, unique indexes if necessary
+    index = np.asarray(index, dtype=int)
+    if sorted_and_unique:
+        unique_index = index
+        inverse_index = None
+    else:
+        unique_index, inverse_index = np.unique(index, return_inverse=True)
+
+    # Every index is a range of length one. Merge any adjacent ranges.
+    starts, counts = merge_ranges(unique_index, np.ones(len(unique_index), dtype=int))
+
+    # Read in the specified ranges
+    result = read_slices(dataset, starts, counts)
+
+    # And put the result into the order in which the indexes were requested
+    if inverse_index is not None:
+        result = result[inverse_index,...]
     return result
