@@ -153,44 +153,86 @@ def read_slices(dataset, starts, counts, result=None):
     return result
 
 
-def read_indexes(dataset, index, sorted_and_unique=False):
-    """
-    Read the specified indexes from a HDF5 dataset. Here we assume that the
-    requested indexes are likely to include runs of consecutive values and so
-    can be efficiently handled using hyperslab reads. The array of indexes is
-    converted into (start, count) pairs and the dataset is read using
-    read_slices().
+class IndexedDatasetReader:
 
-    The supplied indexes are in the first dimension. We read all data in any
-    subsequent dimensions. Indexes must be unique and in ascending order if
-    sorted_and_unique is True.
+    def __init__(self, index, sorted_and_unique=False):
+        """
+        Class for reading specified indexes from HDF5 datasets. Here we assume
+        that the requested indexes are likely to include runs of consecutive
+        values and so can be efficiently handled using hyperslab reads. The
+        array of indexes is converted into (start, count) pairs and datasets
+        are read using read_slices().
 
-    :param dataset: HDF5 dataset to read from
-    :type  dataset: h5py.Dataset
-    :param index: 1D array with indexes to read in the first dimension
-    :type  index: np.ndarray
-    :param sorted_and_unique: set to True if index values are sorted and unique
-    :type  sorted_and_unique: bool
+        The supplied indexes are in the first dimension. We read all data in any
+        subsequent dimensions. Indexes must be unique and in ascending order if
+        sorted_and_unique is True.
 
-    :return: a numpy array with the data read from the dataset
-    :rtype: numpy.ndarray
-    """
+        An instance of this class can be used to read the same elements from
+        multiple datasets.
 
-    # Get sorted, unique indexes if necessary
-    index = np.asarray(index, dtype=int)
-    if sorted_and_unique:
-        unique_index = index
-        inverse_index = None
-    else:
-        unique_index, inverse_index = np.unique(index, return_inverse=True)
+        :param index: 1D array with indexes to read in the first dimension
+        :type  index: np.ndarray
+        :param sorted_and_unique: set to True if index values are sorted and unique
+        :type  sorted_and_unique: bool
+        """
+        # Get sorted, unique indexes if necessary
+        index = np.asarray(index, dtype=int)
+        if sorted_and_unique:
+            self.unique_index = index
+            self.inverse_index = None
+        else:
+            self.unique_index, self.inverse_index = np.unique(index, return_inverse=True)
 
-    # Every index is a range of length one. Merge any adjacent ranges.
-    starts, counts = merge_ranges(unique_index, np.ones(len(unique_index), dtype=int))
+        # Every index is a range of length one. Merge any adjacent ranges.
+        self.starts, self.counts = merge_ranges(self.unique_index, np.ones(len(self.unique_index), dtype=int))
 
-    # Read in the specified ranges
-    result = read_slices(dataset, starts, counts)
+    def read(dataset):
+        """
+        Read the specified indexes from a HDF5 dataset.
 
-    # And put the result into the order in which the indexes were requested
-    if inverse_index is not None:
-        result = result[inverse_index,...]
-    return result
+        :param dataset: HDF5 dataset to read from
+        :type  dataset: h5py.Dataset
+
+        :return: a numpy array with the data read from the dataset
+        :rtype: numpy.ndarray
+        """
+        # Read in the specified ranges
+        result = read_slices(dataset, self.starts, self.counts)
+
+        # And put the result into the order in which the indexes were requested
+        if self.inverse_index is not None:
+            result = result[self.inverse_index,...]
+        return result
+
+
+class SlicedDatasetReader:
+
+    def __init__(self, starts, counts):
+        """
+        Class for reading specified slices from HDF5 datasets. Datasets are
+        read using read_slices(). The supplied slices are in the first
+        dimension. We read all data in any subsequent dimensions.
+
+        An instance of this class can be used to read the same elements from
+        multiple datasets.
+
+        :param starts: 1D array with starting offset of each slice
+        :type  starts: np.ndarray
+        :param counts: 1D array with length of each slice
+        :type  counts: np.ndarray
+        """
+        # Merge and store any adjacent ranges
+        self.starts, self.counts = merge_ranges(starts, counts)
+
+    def read(dataset):
+        """
+        Read the specified indexes from a HDF5 dataset.
+
+        :param dataset: HDF5 dataset to read from
+        :type  dataset: h5py.Dataset
+
+        :return: a numpy array with the data read from the dataset
+        :rtype: numpy.ndarray
+        """
+        # Read in the specified ranges
+        return read_slices(dataset, self.starts, self.counts)

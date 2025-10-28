@@ -7,6 +7,7 @@ import unyt
 
 from .particle_reader import merge_cells
 from .units import units_from_attributes
+from .utils import IndexedDatasetReader, SlicedDatasetReader
 
 
 class HaloLightconeFile:
@@ -135,58 +136,26 @@ class HaloLightconeFile:
         # Compute expected number of halos
         nr_halos = sum(counts)
 
-        # Loop over halo properties to read from the lightcone
+        # Read halo properties from the lightcone
         result = {}
+        reader = SlicedDatasetReader(offsets, counts)
         for name in lightcone_properties:
-
-            # Locate the dataset with this property
             dataset = self._file[name]
-
-            # Determine output units for this dataset
             units = units_from_attributes(dataset)
-
-            # Allocate the output array
-            shape = [nr_halos,]+list(dataset.shape[1:])
-            data = unyt.unyt_array(np.ndarray(shape, dtype=dataset.dtype), units)
-
-            # Read data for the selected pixels
-            i = 0
-            for offset, count in zip(offsets, counts):
-                data[i:i+count,...] = dataset[offset:offset+count,...]
-                i += count
-            assert i == nr_halos
-            result[name] = data
+            result[name] = unyt.unyt_array(reader.read(dataset), units)
 
         # Now read extra properties from SOAP, if necessary
         if len(soap_properties) > 0:
 
-            # Get the index of each selected lightcone halo, as a plain ndarray.
-            # This will be in no particular order and may contain duplicates
-            # due to preiodic replication.
+            # Get the index of each selected lightcone halo
             soap_index = data[soap_index_name].value
 
-            # Get sorted, unique indexes in SOAP. Here inverse_index can be
-            # used to restore the original array from just the unique elements.
-            unique_soap_index, inverse_index = np.unique(soap_index, return_inverse=True)
-
-            # Loop over datasets to read from SOAP
+            # Read these indexes from the SOAP datasets
+            reader = IndexedDatasetReader(soap_index)
             for name in soap_properties:
-
-                # Locate the SOAP dataset with this property
                 dataset = self._soap_file[name]
-
-                # Determine output units for this dataset
                 units = units_from_attributes(dataset)
-
-                # Read the data into a numpy array. Here we read the full array
-                # and index it in memory. TODO: efficient indexed reads?
-                data = dataset[...][unique_soap_index,...]
-
-                # Put into halo lightcone order and add units
-                data = unyt.unyt_array(data[inverse_index,...], units)
-
-                # Store the result
-                result[name] = data
+                result[name] = unyt.unyt_array(reader.read(dataset), units)
 
         # If the SOAP index was not requested, don't return it
         if soap_index_name in result and soap_index_name not in properties:
