@@ -40,67 +40,36 @@ def dataset(request):
         yield f["data"]
 
 
-def test_read_full_dataset(dataset):
-    """
-    Test the trivial case of reading all elements in one slice
-    """
-    nmax = dataset.shape[0]
-    starts = (0,)
-    counts = (nmax,)
-    result = read_slices(dataset, starts, counts)
-    assert result.shape == dataset.shape
-    assert np.all(result==dataset[...])
-    assert result.dtype == dataset.dtype
+# Test cases
+nmax = 10000
+test_cases = [
+    ((0,),         (nmax,)),                   # All in one slice
+    ((0, nmax//2), (nmax//2, nmax-nmax//2)),   # All in two slices
+    ((),           ()),                        # Zero slices
+    ((0,),         (0,)),                      # A zero sized slice
+    ((100,),       (200,)),                    # A single partial slice
+]
 
 
-def test_read_full_dataset_two_slices(dataset):
+@pytest.mark.parametrize("starts,counts", test_cases)
+def test_read_slice(dataset, starts, counts):
     """
-    Read all elements in two slices
+    Check that read_slices() reads slices correctly
     """
-    nmax = dataset.shape[0]
-    starts = (0, nmax//2)
-    counts = (nmax//2, nmax-nmax//2)
-    result = read_slices(dataset, starts, counts)
-    assert result.shape == dataset.shape
-    assert np.all(result==dataset[...])
-    assert result.dtype == dataset.dtype
+    # Use read_slices() to read the data
+    data1 = read_slices(dataset, starts, counts)
 
+    # Try reading the slices directly with h5py
+    data2 = []
+    for s, c in zip(starts, counts):
+        data2.append(dataset[s:s+c,...])
+    if len(data2) > 0:
+        data2 = np.concatenate(data2, axis=0)
+    else:
+        shape = (0,)+dataset.shape[1:]
+        data2 = np.zeros(shape, dtype=dataset.dtype)
 
-def test_read_zero_slices(dataset):
-    """
-    If we have zero slices, should get a zero sized result.
-    """
-    nmax = dataset.shape[0]
-    starts = ()
-    counts = ()
-    result = read_slices(dataset, starts, counts)
-    assert result.shape[0] == 0
-    assert result.shape[1:] == dataset.shape[1:]
-    assert result.dtype == dataset.dtype
-
-
-def test_read_zero_sized_slice(dataset):
-    """
-    If we have a slice of size zero, should get a zero sized result.
-    """
-    nmax = dataset.shape[0]
-    starts = (0,)
-    counts = (0,)
-    result = read_slices(dataset, starts, counts)
-    assert result.shape[0] == 0
-    assert result.shape[1:] == dataset.shape[1:]
-    assert result.dtype == dataset.dtype
-
-
-def test_read_partial_slice(dataset):
-    """
-    Try reading a single slice smaller than the full dataset
-    """
-    nmax = dataset.shape[0]
-    starts = (100,)
-    counts = (200,)
-    result = read_slices(dataset, starts, counts)
-    assert result.shape[0] == 200
-    assert result.shape[1:] == dataset.shape[1:]
-    assert result.dtype == dataset.dtype
-    assert np.all(dataset[starts[0]:starts[0]+counts[0],...] == result)
+    # Check the result
+    assert data1.shape == data2.shape
+    assert data1.dtype == data2.dtype
+    assert np.all(data1==data2)
