@@ -5,7 +5,6 @@ import h5py
 import healpy as hp
 import unyt
 
-from .particle_reader import merge_cells
 from .units import units_from_attributes
 from .utils import IndexedDatasetReader, SlicedDatasetReader
 
@@ -124,9 +123,6 @@ class HaloLightconeFile:
             # Compute offset to first halo and number of halos per pixel
             offsets = self._first_halo_in_pixel[pixels]
             counts  = self._num_halos_per_pixel[pixels]
-
-            # Merge any consecutive ranges to read
-            offsets, counts = merge_cells(offsets, counts)
 
         else:
             # We're reading all of the halos, so we just have one range to read
