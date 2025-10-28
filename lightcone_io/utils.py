@@ -60,7 +60,7 @@ def read_slices(dataset, starts, counts, result=None):
         if count > 0:
             # Select this slice
             slice_start = tuple([start,]+[0 for fs in file_shape[1:]])
-            slice_count = tuple([count,]+[i for fs in file_shape[1:]])
+            slice_count = tuple([count,]+[fs for fs in file_shape[1:]])
             file_space_id.select_hyperslab(slice_start, slice_count, op=h5py.h5s.SELECT_OR)
             nr_in_first_dim += count
 
