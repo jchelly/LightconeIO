@@ -35,7 +35,7 @@ example, we can do this::
   properties = ("Lightcone/HaloCentre", "BoundSubhalo/TotalMass")
 
   # Read the data
-  halo_props = halos.read(properties)
+  halo_props = halos.read_halos(properties)
 
 This returns a dict of unyt arrays, which are the halo properties with
 unit information attached. Since the halos are sorted by HEALPix
@@ -93,7 +93,7 @@ and read in some halo properties::
     properties = ("Lightcone/HaloCentre", "SO/200_crit/TotalMass")
 
     # Read the data
-    halo_props = halos.read(properties)
+    halo_props = halos.read_halos(properties)
 
 As before, this returns a dictionary of unyt arrays with the halo
 properties but any properties which do not exist in the halo lightcone
