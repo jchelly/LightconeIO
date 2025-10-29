@@ -101,16 +101,16 @@ class HaloLightconeFile:
         soap_properties = []
         for name in properties:
             if name in self._file:
-                lightcone_properies.append(name)
+                lightcone_properties.append(name)
             elif self._soap_file is not None and name in self._soap_file:
-                soap_properies.append(name)
+                soap_properties.append(name)
             else:
                 raise KeyError(f"Unable to locate halo property: {name}")
 
         # If we're reading anything from SOAP we'll need the SOAP index of each
         # halo, so make sure it's in the list of things to read
         if len(soap_properties) > 0 and soap_index_name not in lightcone_properties:
-            lightcone_properies.append(soap_index_name)
+            lightcone_properties.append(soap_index_name)
 
         if pixels is not None:
             # Determine ranges of halos to read
@@ -144,7 +144,7 @@ class HaloLightconeFile:
         if len(soap_properties) > 0:
 
             # Get the index of each selected lightcone halo
-            soap_index = data[soap_index_name].value
+            soap_index = result[soap_index_name].value
 
             # Read these indexes from the SOAP datasets
             reader = IndexedDatasetReader(soap_index)
