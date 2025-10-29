@@ -1,6 +1,7 @@
 #!/bin/env python
 
 import h5py
+import healpy as hp
 import numpy as np
 import unyt
 import pytest
@@ -90,7 +91,8 @@ def halo_id(pos):
 
 def try_read_radius(vector, radius, properties):
     """
-    Read halos in the specified radius about a vector
+    Read halos in the specified radius about a vector and check that we get
+    all of the halos within the radius.
     """
     # Read the specified halos and assign unique IDs to them
     partial_halos = HaloLightconeFile(halo_lightcone_filename)
@@ -115,7 +117,10 @@ def try_read_radius(vector, radius, properties):
         assert np.all(partial_data[name].value == full_data[name][halo_was_read,...])
 
     # Then we need to check that all halos in the specified part of the sky
-    # were read in.
+    # were read in. All halos which were not read must be outside the radius.
+    for i in range(len(halo_was_read)):
+        angle = hp.rotator.angdist(vector, full_data["Lightcone/HaloCentre"][i,:])
+        assert (angle > radius) or halo_was_read[i]
 
 
 def test_read_radius():
