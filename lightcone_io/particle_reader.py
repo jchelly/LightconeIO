@@ -310,7 +310,7 @@ class IndexedLightconeParticleType:
                         units = units_from_attributes(dset)
                         data[name] = unyt.unyt_array(np.ndarray(shape, dtype=dset.dtype), units)
                     else:
-                        data[name] = np.ndarray(shape, dtype=dataset.dtype)
+                        data[name] = np.ndarray(shape, dtype=dset.dtype)
                     offset[name] = 0
 
                 # Read the cells
