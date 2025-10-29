@@ -123,6 +123,23 @@ def try_read_radius(vector, radius, properties):
         assert (angle > radius) or halo_was_read[i]
 
 
+def try_read_radius_with_soap(vector, radius):
+    """
+    Read halos in the specified radius about a vector and check that we get
+    the right values from SOAP.
+    """
+    # Read the specified halos
+    partial_halos = HaloLightconeFile(halo_lightcone_filename, soap_filename=soap_filename)
+    partial_data = partial_halos.read_halos_in_radius(vector, radius, halo_properties+soap_properties)
+
+    # Check SOAP properties against reading the SOAP file directly
+    soap_index = partial_data["InputHalos/SOAPIndex"].value
+    with h5py.File(soap_filename, "r") as infile:
+        for name in soap_properties:
+            assert isinstance(partial_data[name], unyt.unyt_array)
+            assert np.all(partial_data[name].value == infile[name][...][soap_index,...])
+
+
 def test_read_zero_radius():
     """
     Check what happens if we read no halos
@@ -150,3 +167,6 @@ for i in range(N):
 def test_read_radius(vector, radius):
     try_read_radius(vector, radius, halo_properties)
 
+@pytest.mark.parametrize("vector,radius", test_cases)
+def test_read_radius_with_soap(vector, radius):
+    try_read_radius_with_soap(vector, radius)
