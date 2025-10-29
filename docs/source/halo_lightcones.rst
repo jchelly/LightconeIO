@@ -15,6 +15,9 @@ sorted in order of their pixel index in a low resolution HEALPix
 map. This makes it possible to extract halos in particular parts of
 the sky.
 
+Reading a halo lightcone file
+-----------------------------
+
 A halo lightcone file can be opened using the
 :py:class:`lightcone_io.HaloLightconeFile` class::
 
@@ -32,7 +35,7 @@ example, we can do this::
   properties = ("Lightcone/HaloCentre", "BoundSubhalo/TotalMass")
 
   # Read the data
-  halo_props = halos.read(properties)
+  halo_props = halos.read_halos(properties)
 
 This returns a dict of unyt arrays, which are the halo properties with
 unit information attached. Since the halos are sorted by HEALPix
@@ -54,3 +57,46 @@ the sky::
 
 Again, this returns a dict of unyt arrays with the halo properties,
 but only halos in the specified patch of sky are included.
+
+Reading SOAP properties for lightcone halos
+-------------------------------------------
+
+Not all SOAP halo properties are copied into the lightcone halo
+catalogue because it would make the files unreasonably large. However,
+for each halo in the halo lightcone we store the index in the
+corresponding SOAP output as ``InputHalos/SOAPIndex``. It is therefore
+possible to look up a wide range of SOAP properties for halos in the
+lightcone catalogue.
+
+The :py:class:`lightcone_io.HaloLightconeFile` class has an optional
+parameter ``soap_filename`` which can be used to do this. For
+example::
+
+      import lightcone_io as lc
+      halos = lc.HaloLightconeFile(filename="hbt_lightcone_halos/lightcone0/lightcone_halos_0070.hdf5",
+                                   soap_filename="SOAP-HBT/halo_properties_0070.hdf5")
+
+This opens one of the halo lightcone files AND the corresponding SOAP
+output which the halos were taken from. We can then select a patch of
+sky to read in, as above::
+
+      # Line of sight vector specifying a point on the sky
+      vector = (1.0, 0.0, 0.0)
+
+      # Angular radius around this point (in radians)
+      import numpy as np
+      radius = np.radians(10.0)
+
+and read in some halo properties::
+
+    # List of halo properties to read
+    properties = ("Lightcone/HaloCentre", "SO/200_crit/TotalMass")
+
+    # Read the data
+    halo_props = halos.read_halos(properties)
+
+As before, this returns a dictionary of unyt arrays with the halo
+properties but any properties which do not exist in the halo lightcone
+file will be read in from SOAP instead. In this case the quantity
+``SO/200_crit/TotalMass`` is read from the SOAP file and reordered to
+match the lightcone halo catalogue.

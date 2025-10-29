@@ -24,3 +24,12 @@ pip install sphinx sphinx-rtd-theme sphinx-autodoc-typehints
 cd docs
 make html
 ```
+
+## Running unit tests
+
+There are a few unit tests which can be run with just
+```
+pytest
+```
+in the source code directory. Note that test coverage is currently
+very poor!

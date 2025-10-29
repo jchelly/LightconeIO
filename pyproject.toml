@@ -17,6 +17,7 @@ dependencies = [
     "healpy",
     "scipy",
     "tqdm",
+    "pytest",
 ]
 readme = "README.md"
 classifiers = [
