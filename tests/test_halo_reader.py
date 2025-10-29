@@ -123,7 +123,30 @@ def try_read_radius(vector, radius, properties):
         assert (angle > radius) or halo_was_read[i]
 
 
-def test_read_radius():
-    vector = np.asarray((1, 0, 0), dtype=float)
-    radius = np.radians(10.0)
+def test_read_zero_radius():
+    """
+    Check what happens if we read no halos
+    """
+    try_read_radius(np.asarray((1, 0, 0), dtype=float), 0.0, halo_properties)
+
+
+def random_normalized_vectors(N, rng):
+    vectors = rng.normal(size=(N, 3))
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    normalized_vectors = vectors / norms
+    return normalized_vectors
+
+
+# Generate some randomized test cases
+N = 50
+rng = np.random.default_rng(seed=0)
+test_vectors = random_normalized_vectors(N, rng)
+test_radii = rng.random(N) * np.radians(90.0)
+test_cases = []
+for i in range(N):
+    test_cases.append((test_vectors[i,:], test_radii[i]))
+
+@pytest.mark.parametrize("vector,radius", test_cases)
+def test_read_radius(vector, radius):
     try_read_radius(vector, radius, halo_properties)
+
