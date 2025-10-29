@@ -6,6 +6,7 @@ import unyt
 import pytest
 
 from lightcone_io.halo_reader import HaloLightconeFile
+from lightcone_io.utils import match
 
 halo_lightcone_filename = "./tests/data/halo_lightcone/lightcone_halos_0070.hdf5"
 soap_filename = "./tests/data/halo_lightcone/halo_properties_0070.hdf5"
@@ -72,3 +73,52 @@ def test_read_everything_with_soap():
         for name in soap_properties:
             assert isinstance(data[name], unyt.unyt_array)
             assert np.all(data[name].value == infile[name][...][soap_index,...])
+
+
+def halo_id(pos):
+    """
+    Generate unique IDs for the halos in the lightcone, based on positions
+    """
+    nr_halos = pos.shape[0]
+    halo_id = np.ndarray(nr_halos, dtype=np.uint64)
+    for i in range(nr_halos):
+        halo_id[i] = pos[i,:].astype(np.float64).view(np.uint64).sum()
+    # As long as these happen to be unique for the test dataset, we're ok!
+    assert len(halo_id) == len(np.unique(halo_id))
+    return halo_id
+
+
+def try_read_radius(vector, radius, properties):
+    """
+    Read halos in the specified radius about a vector
+    """
+    # Read the specified halos and assign unique IDs to them
+    partial_halos = HaloLightconeFile(halo_lightcone_filename)
+    partial_data = partial_halos.read_halos_in_radius(vector, radius, halo_properties)
+    partial_halo_ids = halo_id(partial_data["Lightcone/HaloCentre"])
+
+    # Read all halos and assign unique IDs to them
+    with h5py.File(halo_lightcone_filename, "r") as infile:
+        full_data = {}
+        for name in partial_data:
+            full_data[name] = infile[name][...]
+        full_halo_ids = halo_id(full_data["Lightcone/HaloCentre"])
+
+    # Identify which halos in the full set were read in
+    partial_index = match(full_halo_ids, partial_halo_ids)
+    halo_was_read = (ptr>=0)
+
+    # Check that all arrays agree: if we take the full set of halos and discard
+    # any which were not read, we should be left with the partial set.
+    assert set(partial_data.keys()) == set(full_data.keys())
+    for name in partial_data:
+        assert np.all(partial_data[name].value == full_data[name][halo_was_read,...])
+
+    # Then we need to check that all halos in the specified part of the sky
+    # were read in.
+
+
+def test_read_radius():
+    vector = np.asarray((1, 0, 0), dtype=float)
+    radius = np.radians(10.0)
+    try_read_radius(vector, radius, halo_properties)
