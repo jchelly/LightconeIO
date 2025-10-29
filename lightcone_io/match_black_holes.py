@@ -328,7 +328,7 @@ def match_black_holes(args):
         # is distributed over all MPI ranks.
         total_halos_this_rank = np.sum(halos_per_pixel, dtype=np.int64)
         total_halos_prev_ranks = comm.scan(total_halos_this_rank) - total_halos_this_rank
-        first_halo_in_pixel = np.cumsum(halos_per_pixel, dtype=np.int64) + total_halos_prev_ranks
+        first_halo_in_pixel = np.cumsum(halos_per_pixel, dtype=np.int64) - halos_per_pixel + total_halos_prev_ranks
         phdf5.collective_write(index_group, "FirstHaloInPixel", first_halo_in_pixel, gzip=6, chunk=chunk_size, comm=comm)
 
         # Write out the range of redshifts associated with each snapshot

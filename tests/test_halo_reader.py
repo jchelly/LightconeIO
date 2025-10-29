@@ -106,7 +106,7 @@ def try_read_radius(vector, radius, properties):
 
     # Identify which halos in the full set were read in
     partial_index = match(full_halo_ids, partial_halo_ids)
-    halo_was_read = (ptr>=0)
+    halo_was_read = (partial_index>=0)
 
     # Check that all arrays agree: if we take the full set of halos and discard
     # any which were not read, we should be left with the partial set.
