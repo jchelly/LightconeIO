@@ -80,21 +80,52 @@ def particle_id(pos):
     return particle_id
 
 
-test_cases = [
-    (None,            None,             None),       # read everything
-    (None,            None,             (5.0, 6.0)), # redshift selection only
-    ((1.0, 0.0, 0.0), np.radians(10.0), None),       # radius selection only
-    ((1.0, 0.0, 0.0), np.radians(10.0), (5.0, 6.0)), # select on redshift and radius
-]
-@pytest.mark.parametrize("vector,radius,redshift_range", test_cases)
-def test_redshift_range(vector, radius, redshift_range):
+def random_normalized_vectors(N, rng):
+    vectors = rng.normal(size=(N, 3))
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    normalized_vectors = vectors / norms
+    return normalized_vectors
+
+#
+# Define some test cases
+#
+N = 4
+rng = np.random.default_rng(seed=0)
+
+# Make an array of direction vectors
+vectors = random_normalized_vectors(N, rng)
+test_vectors = [None,]
+for i in range(N):
+    test_vectors.append(vectors[i,:])
+
+# Make an array of angular radii
+max_angle = np.radians(90.0)
+angles = rng.random(N) * max_angle
+test_angles = [None,]
+for i in range(N):
+    test_angles.append(angles[i])
+
+# Make an array of redshift ranges
+test_z_ranges = [None,]
+for _ in range(N):
+    z1 = rng.random()*particle_z_max
+    z2 = rng.random()*particle_z_max
+    test_z_ranges.append((min(z1, z2), max(z1, z2)))
+
+@pytest.mark.parametrize("vector,radius", zip(test_vectors, test_angles))
+@pytest.mark.parametrize("redshift_range", test_z_ranges)
+@pytest.mark.parametrize("exact", (True, False))
+def test_read_particles(vector, radius, redshift_range, exact):
     """
     Try reading a redshift range and patch on the sky and comparing to h5py
     """
 
     # Read the data using the ParticleLightcone class
     lightcone = ParticleLightcone(particle_filename.format(file_nr=0))
-    partial_data = lightcone["BH"].read(("Coordinates", "ParticleIDs", "ExpansionFactors"), vector, radius, redshift_range)
+    if exact:
+        partial_data = lightcone["BH"].read_exact(("Coordinates", "ParticleIDs", "ExpansionFactors"), vector, radius, redshift_range)
+    else:
+        partial_data = lightcone["BH"].read(("Coordinates", "ParticleIDs", "ExpansionFactors"), vector, radius, redshift_range)
 
     # Read all of the data using h5py
     full_data = {"Coordinates" : [], "ParticleIDs" : [], "ExpansionFactors" : []}
@@ -113,7 +144,7 @@ def test_redshift_range(vector, radius, redshift_range):
     partial_index = match(full_data["UniqueID"], partial_data["UniqueID"])
     particle_was_read = (partial_index>=0)
 
-    # Check that all arrays agree: if we take the full set of halos and discard
+    # Check that all arrays agree: if we take the full set of particles and discard
     # any which were not read, we should be left with the partial set.
     assert set(partial_data.keys()) == set(full_data.keys())
     for name in partial_data:
@@ -137,3 +168,33 @@ def test_redshift_range(vector, radius, redshift_range):
     # All particles which were not read should be outside the selection
     selected = in_z_range & in_radius
     assert np.all(particle_was_read | np.logical_not(selected))
+
+
+@pytest.mark.parametrize("vector,radius", zip(test_vectors, test_angles))
+@pytest.mark.parametrize("redshift_range", test_z_ranges)
+def test_iterate_chunks(vector, radius, redshift_range):
+    """
+    Check that the .read() and .iterate_chunks() methods produce the same
+    results.
+    """
+    properties = ("Coordinates", "ParticleIDs", "ExpansionFactors")
+    lightcone = ParticleLightcone(particle_filename.format(file_nr=0))
+
+    # Read using .the .read() method
+    data1 = lightcone["BH"].read(properties, vector, radius, redshift_range)
+
+    # Read the same data in chunks
+    data2 = {name : [] for name in properties}
+    for chunk in lightcone["BH"].iterate_chunks(properties, vector, radius, redshift_range):
+        assert set(chunk.keys()) == set(properties)
+        for name in chunk:
+            assert isinstance(chunk[name], unyt.unyt_array)
+            data2[name].append(chunk[name])
+    for name in data2:
+        data2[name] = np.concatenate(data2[name])
+
+    # Compare
+    assert set(data1.keys()) == set(data2.keys())
+    for name in data1:
+        assert np.all(data1[name]==data2[name])
+
