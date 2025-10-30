@@ -13,7 +13,7 @@ requires-python = ">=3.10"
 dependencies = [
     "h5py",
     "numpy",
-    "unyt",
+    "unyt>=3.0",
     "healpy",
     "scipy",
     "tqdm",
