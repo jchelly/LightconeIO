@@ -585,7 +585,7 @@ class IndexedLightconeParticleType:
 
         # Merge chunks
         for name in data:
-            data[name] = unyt.array.uconcatenate(data[name])
+            data[name] = np.concatenate(data[name])
 
         return data
 
