@@ -27,7 +27,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-mpi = ["mpi4py", "virgodc>=1.0.1"]
+mpi = ["mpi4py", "virgodc>=1.0.2"]
 
 [project.urls]
 Homepage = "https://github.com/jchelly/LightconeIO"
