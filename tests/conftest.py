@@ -10,7 +10,7 @@ import pytest
 def pytest_addoption(parser):
     parser.addoption("--hdfstream-server", default=None,
                      help="Hdfstream server URL for tests")
-    parser.addoption("--hdfstream-dir", default=None,
+    parser.addoption("--hdfstream-dir", default="/",
                      help="Hdfstream directory with test data")
 
 
