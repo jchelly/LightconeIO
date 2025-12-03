@@ -65,4 +65,4 @@ jobs:
 
     - name: Test with pytest
       run: |
-        pytest
+        pytest --hdfstream-server=http://localhost:8080/hdfstream
