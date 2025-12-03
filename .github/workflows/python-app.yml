@@ -17,34 +17,22 @@ jobs:
 
     runs-on: ubuntu-latest
 
-    services:
-      hdfstream:
-        image: ghcr.io/jchelly/hdfstream-api:0.0.5
-        ports:
-          - 8080:8080
-        volumes:
-          - /tmp/hdfstream:/opt/hdfstream/data:ro
-        env:
-          HDFSTREAM_PREFIX: tests/data
-        options: >-
-          --name hdfstream
-
     steps:
     - uses: actions/checkout@v4
-
-    - name: Copy test data to the mounted directory
-      run: |
-        sudo cp -r tests/data /tmp/hdfstream/
-
-    - name: Restart hdfstream to serve checked out data files
-      uses: docker://docker
-      with:
-        args: docker restart hdfstream
 
     - name: Set up Python 3.10
       uses: actions/setup-python@v3
       with:
         python-version: "3.10"
+
+    - name: Start hdfstream service with tests/data mounted
+      run: |
+        docker run -d \
+          --name hdfstream \
+          -p 8080:8080 \
+          -v ${{ github.workspace }}/tests/data:/opt/hdfstream/data:ro \
+          -e HDFSTREAM_PREFIX=tests/data \
+          ghcr.io/jchelly/hdfstream-api:0.0.5
 
     - name: Install dependencies
       run: |
@@ -66,3 +54,7 @@ jobs:
     - name: Test with pytest
       run: |
         pytest --hdfstream-server=http://localhost:8080/hdfstream
+
+    - name: Stop hdfstream service
+      if: always()
+      run: docker rm -f hdfstream
