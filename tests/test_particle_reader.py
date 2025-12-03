@@ -11,7 +11,7 @@ from lightcone_io.utils import match
 
 
 # Names of the particle files
-particle_filename = "./tests/data/particles/lightcone0_particles/lightcone0_0000.{file_nr}.hdf5"
+particle_filename = "tests/data/particles/lightcone0_particles/lightcone0_0000.{file_nr}.hdf5"
 nr_particle_files = 4
 
 # Expected contents of the files

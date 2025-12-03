@@ -1,14 +1,15 @@
 #!/bin/env python
 
 import collections.abc
+from contextlib import nullcontext
 
 import numpy as np
-import h5py
 import re
 import healpy as hp
 import unyt
 
 from .units import units_from_attributes
+from .utils import LocalOrRemoteFile
 
 
 def merge_cells(cell_offset, cell_length):
@@ -33,7 +34,7 @@ def merge_cells(cell_offset, cell_length):
     return cell_offset, cell_length
 
 
-class IndexedLightconeParticleType:
+class IndexedLightconeParticleType(LocalOrRemoteFile):
     """
     Class to read a single particle type from a lightcone. This
     assumes that the lightcone particles have been sorted by redshift
@@ -52,8 +53,8 @@ class IndexedLightconeParticleType:
     :type  extra_filenames: list of str or None
     """
     def __init__(self, type_name, metadata, index, units, filenames,
-                 extra_filenames=None):
-
+                 extra_filenames=None, remote_dir=None):
+        self.set_directory(remote_dir)
         self.type_name = type_name
         self.metadata  = metadata
         self.index     = index
@@ -81,7 +82,7 @@ class IndexedLightconeParticleType:
         # Find which quantities we have for this type
         properties = {}
         for filename in self.filenames:
-            with h5py.File(filename, "r") as infile:
+            with self.open_file(filename) as infile:
                 if type_name in infile:
                     for prop_name, dataset in infile[type_name].items():
                         if "a-scale exponent" in dataset.attrs:
@@ -101,7 +102,7 @@ class IndexedLightconeParticleType:
         if extra_filenames is not None:
             assert len(filenames) == len(extra_filenames)
             for filename in self.extra_filenames:
-                with h5py.File(filename, "r") as infile:
+                with self.open_file(filename) as infile:
                     if type_name in infile:
                         for prop_name, dataset in infile[type_name].items():
                             if "a-scale exponent" in dataset.attrs:
@@ -288,44 +289,37 @@ class IndexedLightconeParticleType:
             # Make offsets relative to start of the current file
             cell_offset -= first_particle_in_file[current_file]
 
-            # Open the file
-            infile = h5py.File(filename, "r")
-            if read_extra:
-                extra_infile = h5py.File(extra_filename, "r")
+            # Open the file(s)
+            with self.open_file(filename) as infile, (self.open_file(extra_filename) if read_extra else nullcontext()) as extra_infile:
 
-            # Loop over quantities to read
-            for name in property_names:
+                # Loop over quantities to read
+                for name in property_names:
 
-                # Find the dataset for this property
-                if name in self.properties:
-                    dset = infile[self.type_name][name]
-                else:
-                    dset = extra_infile[self.type_name][name]
-
-                # Create output array, if we didn't already
-                if data[name] is None:
-                    shape = list(dset.shape)
-                    shape[0] = nr_particles
-                    if unyt is not None:
-                        units = units_from_attributes(dset)
-                        data[name] = unyt.unyt_array(np.ndarray(shape, dtype=dset.dtype), units)
+                    # Find the dataset for this property
+                    if name in self.properties:
+                        dset = infile[self.type_name][name]
                     else:
-                        data[name] = np.ndarray(shape, dtype=dset.dtype)
-                    offset[name] = 0
+                        dset = extra_infile[self.type_name][name]
 
-                # Read the cells
-                for (clen, coff) in zip(cell_length, cell_offset):
-                    i1 = max((coff, 0))
-                    i2 = min((coff+clen), num_particles_in_file[current_file])
-                    num = i2 - i1
-                    if num > 0:
-                        data[name][offset[name]:offset[name]+num] = dset[i1:i2,...]
-                        offset[name] += num
+                    # Create output array, if we didn't already
+                    if data[name] is None:
+                        shape = list(dset.shape)
+                        shape[0] = nr_particles
+                        if unyt is not None:
+                            units = units_from_attributes(dset)
+                            data[name] = unyt.unyt_array(np.ndarray(shape, dtype=dset.dtype), units)
+                        else:
+                            data[name] = np.ndarray(shape, dtype=dset.dtype)
+                        offset[name] = 0
 
-            # Close current file(s)
-            infile.close()
-            if read_extra:
-                extra_infile.close()
+                    # Read the cells
+                    for (clen, coff) in zip(cell_length, cell_offset):
+                        i1 = max((coff, 0))
+                        i2 = min((coff+clen), num_particles_in_file[current_file])
+                        num = i2 - i1
+                        if num > 0:
+                            data[name][offset[name]:offset[name]+num] = dset[i1:i2,...]
+                            offset[name] += num
 
         # Check for the case where no particles were read
         if len(offset) == 0:
@@ -590,7 +584,7 @@ class IndexedLightconeParticleType:
         return data
 
 
-class ParticleLightcone(collections.abc.Mapping):
+class ParticleLightcone(collections.abc.Mapping, LocalOrRemoteFile):
     """
     Class used to read particle lightcones. This is a dict-like container for
     the :class:`IndexedLightconeParticleType` instances which represent the
@@ -609,8 +603,8 @@ class ParticleLightcone(collections.abc.Mapping):
     :param extra_filename: name of a file with extra particle properties
     :type  extra_filename: str, or None
     """
-    def __init__(self, fname, comm=None, extra_filename=None):
-
+    def __init__(self, fname, comm=None, extra_filename=None, remote_dir=None):
+        self.set_directory(remote_dir)
         if comm is not None:
             comm_rank = comm.Get_rank()
             comm_size = comm.Get_size()
@@ -636,7 +630,7 @@ class ParticleLightcone(collections.abc.Mapping):
                 else:
                     raise IOError("Unable to extract base name from filename: %s" % fname)
 
-            with h5py.File(fname, "r") as infile:
+            with self.open_file(fname) as infile:
 
                 # Check that this file has indexing info: this class cannot be used to read the
                 # un-sorted lightcones output directly by Swift.
@@ -676,7 +670,7 @@ class ParticleLightcone(collections.abc.Mapping):
                     for name in infile["Cells"][type_name]:
                         index[name] = infile["Cells"][type_name][name][()]
                     self.particle_types[type_name] = IndexedLightconeParticleType(type_name, metadata, index, units, filenames,
-                                                                                  extra_filenames)
+                                                                                  extra_filenames, remote_dir)
         else:
             self.particle_types = None
 

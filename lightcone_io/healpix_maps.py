@@ -8,10 +8,10 @@ import h5py
 import unyt
 
 import lightcone_io.units
-import lightcone_io.file_utils as file_utils
+from lightcone_io.utils import LocalOrRemoteFile
 
 
-class HealpixMap(collections.abc.Sequence, file_utils.LocalOrRemoteFile):
+class HealpixMap(collections.abc.Sequence, LocalOrRemoteFile):
     """
     Class used to read lightcone HEALPix maps written out by SWIFT.
     Numpy-style indexing can be used to read pixels from the map.
@@ -168,7 +168,7 @@ class HealpixMap(collections.abc.Sequence, file_utils.LocalOrRemoteFile):
         return self.read_pixels(start, stop)
 
 
-class Shell(collections.abc.Mapping, file_utils.LocalOrRemoteFile):
+class Shell(collections.abc.Mapping, LocalOrRemoteFile):
     """
     Dict-like container for all of the :class:`HealpixMap` instances
     associated with a lightcone shell. Subscripting a :class:`Shell`
@@ -226,7 +226,7 @@ class Shell(collections.abc.Mapping, file_utils.LocalOrRemoteFile):
         return len(self._maps)
 
 
-class ShellArray(collections.abc.Sequence, file_utils.LocalOrRemoteFile):
+class ShellArray(collections.abc.Sequence, LocalOrRemoteFile):
     """
     Sequence-like container for a set of lightcone shells. This class is
     the recommended way to read lightcone HEALPix maps.
