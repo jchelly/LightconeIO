@@ -96,7 +96,50 @@ def merge_slices(starts, counts):
     return starts, counts
 
 
-def read_slices(dataset, starts, counts, result=None):
+def read_slices_hdfstream(dataset, starts, counts, result=None):
+    """
+    Read the specified slices from a hdfstream remote dataset. Datasets can
+    only be sliced along the first dimension: we always read all elements in
+    the remaining dimensions.
+
+    Slices must be in ascending order of starting index and must not overlap.
+    Python/numpy style negative indexes from the end of the dataset are not
+    supported.
+
+    :param dataset: hdfstream dataset to read from
+    :type  dataset: hdfstream.RemoteDataset
+    :param starts: 1D array with starting offset of each slice
+    :type  starts: np.ndarray
+    :param counts: 1D array with length of each slice
+    :type  counts: np.ndarray
+    :param result: array to hold the result
+    :type  result: np.ndarray, or None
+
+    :return: a numpy array with the data
+    :rtype: numpy.ndarray
+    """
+    # Sanity check the slices
+    starts = np.asarray(starts, dtype=int)
+    counts = np.asarray(counts, dtype=int)
+    validate_slices(starts, counts)
+
+    # Merged any adjacent slices
+    starts, counts = merge_slices(starts, counts)
+
+    # Make a list of slices to read
+    slices = []
+    for s, c in zip(starts, counts):
+        slices.append(np.s_[s:s+c,...])
+
+    # Request the slices
+    if result is None:
+        result = dataset.request_slices(slices)
+    else:
+        dataset.request_slices(slices, dest=result)
+    return result
+
+
+def read_slices_h5py(dataset, starts, counts, result=None):
     """
     Read the specified slices from a HDF5 dataset. Uses h5py low level calls
     to read the slices with a single H5Dread(). Datasets can only be sliced
@@ -171,6 +214,31 @@ def read_slices(dataset, starts, counts, result=None):
         dataset_id.read(mem_space_id, file_space_id, result)
 
     return result
+
+
+def read_slices(dataset, starts, counts, result=None):
+    """
+    Read the specified slices from a h5py dataset or a hdfstream remote
+    dataset.
+
+    :param dataset: dataset to read from
+    :type  dataset: h5py.Dataset or hdfstream.RemoteDataset
+    :param starts: 1D array with starting offset of each slice
+    :type  starts: np.ndarray
+    :param counts: 1D array with length of each slice
+    :type  counts: np.ndarray
+    :param result: array to hold the result
+    :type  result: np.ndarray, or None
+
+    :return: a numpy array with the data
+    :rtype: numpy.ndarray
+    """
+    if isinstance(dataset, h5py.Dataset):
+        return read_slices_h5py(dataset, starts, counts, result)
+    elif isinstance(dataset, hdfstream.RemoteDataset):
+        return read_slices_hdfstream(dataset, starts, counts, result)
+    else:
+        raise RuntimeError("Unsupported dataset type")
 
 
 class IndexedDatasetReader:
