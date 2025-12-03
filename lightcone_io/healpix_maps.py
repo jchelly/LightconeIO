@@ -20,7 +20,8 @@ class HealpixMap(collections.abc.Sequence, LocalOrRemoteFile):
     :type  filenames: list of str
     :param map_name: name of the map to read
     :type  map_name: str
-
+    :param remote_dir: remote directory containing the file, or None
+    :type  remote_dir: hdfstream.RemoteDirectory, or None for local files
     """
     def __init__(self, filenames, map_name, remote_dir=None):
         self.set_directory(remote_dir)

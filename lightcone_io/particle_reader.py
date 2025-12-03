@@ -51,6 +51,8 @@ class IndexedLightconeParticleType(LocalOrRemoteFile):
     :type  filenames: list of str
     :param extra_filenames: names of the HDF5 files containing additional data
     :type  extra_filenames: list of str or None
+    :param remote_dir: remote directory containing the file, or None
+    :type  remote_dir: hdfstream.RemoteDirectory, or None for local files
     """
     def __init__(self, type_name, metadata, index, units, filenames,
                  extra_filenames=None, remote_dir=None):
@@ -602,6 +604,8 @@ class ParticleLightcone(collections.abc.Mapping, LocalOrRemoteFile):
     :type  comm: mpi4py.MPI.Comm, or None
     :param extra_filename: name of a file with extra particle properties
     :type  extra_filename: str, or None
+    :param remote_dir: remote directory containing the file, or None
+    :type  remote_dir: hdfstream.RemoteDirectory, or None for local files
     """
     def __init__(self, fname, comm=None, extra_filename=None, remote_dir=None):
         self.set_directory(remote_dir)
