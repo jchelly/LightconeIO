@@ -28,11 +28,11 @@ particle_z_min = 0.0
 particle_z_max = 15.0
 
 
-def test_lightcone_metadata():
+def test_lightcone_metadata(remote_dir):
     """
     Check that we're reading metadata correctly
     """
-    lightcone = ParticleLightcone(particle_filename.format(file_nr=0))
+    lightcone = ParticleLightcone(particle_filename.format(file_nr=0), remote_dir=remote_dir)
     assert set(lightcone) == set(particle_types)
 
     # Check we have the expected properties
@@ -47,19 +47,19 @@ def test_lightcone_metadata():
                 assert lightcone[ptype].properties[name].units == unyt.dimensionless
 
 
-def test_read_all():
+def test_read_all(remote_dir):
     """
     Try reading in a full array and comparing to result from h5py
     """
     # Read using the ParticleLightcone class
-    lightcone = ParticleLightcone(particle_filename.format(file_nr=0))
+    lightcone = ParticleLightcone(particle_filename.format(file_nr=0), remote_dir=remote_dir)
     pos1 = lightcone["BH"].read(("Coordinates",))["Coordinates"]
     assert isinstance(pos1, unyt.unyt_array)
 
     # Read using h5py
     pos2 = []
     for file_nr in range(nr_particle_files):
-        with h5py.File(particle_filename.format(file_nr=file_nr), "r") as infile:
+        with lightcone.open_file(particle_filename.format(file_nr=file_nr)) as infile:
             pos2.append(infile["BH/Coordinates"][...])
     pos2 = np.concatenate(pos2)
 
@@ -115,13 +115,13 @@ for _ in range(N):
 @pytest.mark.parametrize("vector,radius", zip(test_vectors, test_angles))
 @pytest.mark.parametrize("redshift_range", test_z_ranges)
 @pytest.mark.parametrize("exact", (True, False))
-def test_read_particles(vector, radius, redshift_range, exact):
+def test_read_particles(remote_dir, vector, radius, redshift_range, exact):
     """
     Try reading a redshift range and patch on the sky and comparing to h5py
     """
 
     # Read the data using the ParticleLightcone class
-    lightcone = ParticleLightcone(particle_filename.format(file_nr=0))
+    lightcone = ParticleLightcone(particle_filename.format(file_nr=0), remote_dir=remote_dir)
     if exact:
         partial_data = lightcone["BH"].read_exact(("Coordinates", "ParticleIDs", "ExpansionFactors"), vector, radius, redshift_range)
     else:
@@ -130,7 +130,7 @@ def test_read_particles(vector, radius, redshift_range, exact):
     # Read all of the data using h5py
     full_data = {"Coordinates" : [], "ParticleIDs" : [], "ExpansionFactors" : []}
     for file_nr in range(nr_particle_files):
-        with h5py.File(particle_filename.format(file_nr=file_nr), "r") as infile:
+        with lightcone.open_file(particle_filename.format(file_nr=file_nr)) as infile:
             for name in full_data:
                 full_data[name].append(infile["BH"][name][...])
     for name in full_data:
@@ -172,13 +172,13 @@ def test_read_particles(vector, radius, redshift_range, exact):
 
 @pytest.mark.parametrize("vector,radius", zip(test_vectors, test_angles))
 @pytest.mark.parametrize("redshift_range", test_z_ranges)
-def test_iterate_chunks(vector, radius, redshift_range):
+def test_iterate_chunks(remote_dir, vector, radius, redshift_range):
     """
     Check that the .read() and .iterate_chunks() methods produce the same
     results.
     """
     properties = ("Coordinates", "ParticleIDs", "ExpansionFactors")
-    lightcone = ParticleLightcone(particle_filename.format(file_nr=0))
+    lightcone = ParticleLightcone(particle_filename.format(file_nr=0), remote_dir=remote_dir)
 
     # Read using .the .read() method
     data1 = lightcone["BH"].read(properties, vector, radius, redshift_range)

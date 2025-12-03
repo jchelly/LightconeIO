@@ -396,5 +396,3 @@ def match(arr1, arr2, arr2_sorted=False, arr2_index=None):
     ptr = np.where(ptr>= 0, ind[ptr], -1)
 
     return ptr
-
-
