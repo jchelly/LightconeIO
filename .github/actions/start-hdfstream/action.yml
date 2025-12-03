@@ -17,6 +17,7 @@ runs:
   using: "composite"
   steps:
     - name: Start hdfstream service with tests/data mounted
+      shell: bash
       run: |
         docker run -d \
           --name hdfstream \

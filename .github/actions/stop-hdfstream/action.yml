@@ -3,4 +3,6 @@ description: "Stop and remove the hdfstream container"
 runs:
   using: "composite"
   steps:
-    - run: docker rm -f hdfstream
+    - name: Stop the hdfstream service
+      shell: bash
+      run: docker rm -f hdfstream
