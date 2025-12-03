@@ -1,0 +1,6 @@
+name: "Stop hdfstream"
+description: "Stop and remove the hdfstream container"
+runs:
+  using: "composite"
+  steps:
+    - run: docker rm -f hdfstream

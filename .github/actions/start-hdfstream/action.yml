@@ -1,0 +1,26 @@
+name: 'Start hdfstream'
+description: 'Start the hdfstream service with a mounted directory'
+inputs:
+  data-dir:
+    description: 'Directory with the files to serve'
+    required: true
+    default: './data/'
+  virtual-prefix:
+    description: 'Virtual directory prefix to use'
+    required: true
+    default: 'Data'
+  image:
+    description: 'Server container image to use'
+    required: true
+    default: ghcr.io/jchelly/hdfstream-api:0.0.5
+runs:
+  using: "composite"
+  steps:
+    - name: Start hdfstream service with tests/data mounted
+      run: |
+        docker run -d \
+          --name hdfstream \
+          -p 8080:8080 \
+          -v ${{ inputs.data-dir }}:/opt/hdfstream/data:ro \
+          -e HDFSTREAM_PREFIX=${{ inputs.virtual-prefix }} \
+          ${{ inputs.image }}

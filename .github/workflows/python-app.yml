@@ -25,14 +25,12 @@ jobs:
       with:
         python-version: "3.10"
 
-    - name: Start hdfstream service with tests/data mounted
-      run: |
-        docker run -d \
-          --name hdfstream \
-          -p 8080:8080 \
-          -v ${{ github.workspace }}/tests/data:/opt/hdfstream/data:ro \
-          -e HDFSTREAM_PREFIX=tests/data \
-          ghcr.io/jchelly/hdfstream-api:0.0.5
+    - name: Start hdfstream service with ./tests/data mounted
+      uses: ./.github/actions/start-hdfstream
+      with:
+        data-dir: ./tests/data
+        virtual-prefix: tests/data
+        image: ghcr.io/jchelly/hdfstream-api:0.0.5
 
     - name: Install dependencies
       run: |
@@ -56,5 +54,5 @@ jobs:
         pytest --hdfstream-server=http://localhost:8080/hdfstream
 
     - name: Stop hdfstream service
+      uses: ./.github/actions/stop-hdfstream
       if: always()
-      run: docker rm -f hdfstream
