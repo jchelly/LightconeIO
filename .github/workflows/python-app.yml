@@ -26,8 +26,6 @@ jobs:
           - ${{ github.workspace }}/tests/data:/opt/hdfstream/data
         env:
           HDFSTREAM_PREFIX: tests/data
-        options: >-
-          --name hdfstream
 
     steps:
     - uses: actions/checkout@v4
@@ -47,14 +45,9 @@ jobs:
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         # flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-    - name: Restart hdfstream to serve checked out data files
-      uses: docker://docker
-      with:
-        args: docker restart hdfstream
-
     - name: Install module
       run: |
         pip install -e .
     - name: Test with pytest
       run: |
-        pytest --hdfstream-server=http://localhost:8080/hdfstream
+        pytest
