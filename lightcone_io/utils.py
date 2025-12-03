@@ -257,6 +257,15 @@ class SlicedDatasetReader:
         # Read in the specified ranges
         return read_slices(dataset, self.starts, self.counts)
 
+    def count(self):
+        """
+        Return the number of selected elements
+
+        :return: number of selected elements
+        :rtype: int
+        """
+        return np.sum(self.counts, dtype=int)
+
 
 def match(arr1, arr2, arr2_sorted=False, arr2_index=None):
     """

@@ -9,7 +9,7 @@ import healpy as hp
 import unyt
 
 from .units import units_from_attributes
-from .utils import LocalOrRemoteFile
+from .utils import LocalOrRemoteFile, SlicedDatasetReader
 
 
 def merge_cells(cell_offset, cell_length):
@@ -272,24 +272,28 @@ class IndexedLightconeParticleType(LocalOrRemoteFile):
             first_cell = first_cell_in_file[current_file]
             last_cell  = last_cell_in_file[current_file]
 
-            # Get lengths and offset of these cells
-            cell_offset = first_particle_in_cell[first_cell:last_cell+1]
-            cell_length = num_particles_in_cell[first_cell:last_cell+1]
+            # Get start and end of each cell, relative to the start of this file
+            cell_start = first_particle_in_cell[first_cell:last_cell+1] - first_particle_in_file[current_file]
+            cell_stop  = cell_start + num_particles_in_cell[first_cell:last_cell+1]
 
-            # Discard cells which are empty or which will not be read
-            keep = read_cell[first_cell:last_cell+1] & (cell_length > 0)
-            cell_offset = cell_offset[keep]
-            cell_length = cell_length[keep]
+            # Discard cells which will not be read
+            keep = read_cell[first_cell:last_cell+1]
+            cell_start = cell_start[keep]
+            cell_stop  = cell_stop[keep]
 
-            # Merge adjacent cells
-            cell_offset, cell_length = merge_cells(cell_offset, cell_length)
+            # Clip off any parts of cells which extend outside this file
+            cell_start = np.clip(cell_start, a_min=0, a_max=None)
+            cell_stop  = np.clip(cell_stop, a_min=None, a_max=num_particles_in_file[current_file])
+
+            # Construct the sliced reader
+            start = cell_start
+            count = np.maximum(cell_stop-cell_start, 0)
+            sliced_reader = SlicedDatasetReader(start, count)
+            num_to_read = sliced_reader.count()
 
             # Skip files with no selected cells
-            if sum(cell_length) == 0:
+            if sliced_reader.count() == 0:
                 continue
-
-            # Make offsets relative to start of the current file
-            cell_offset -= first_particle_in_file[current_file]
 
             # Open the file(s)
             with self.open_file(filename) as infile, (self.open_file(extra_filename) if read_extra else nullcontext()) as extra_infile:
@@ -303,7 +307,7 @@ class IndexedLightconeParticleType(LocalOrRemoteFile):
                     else:
                         dset = extra_infile[self.type_name][name]
 
-                    # Create output array, if we didn't already
+                    # Create the output array, if we didn't already
                     if data[name] is None:
                         shape = list(dset.shape)
                         shape[0] = nr_particles
@@ -315,13 +319,8 @@ class IndexedLightconeParticleType(LocalOrRemoteFile):
                         offset[name] = 0
 
                     # Read the cells
-                    for (clen, coff) in zip(cell_length, cell_offset):
-                        i1 = max((coff, 0))
-                        i2 = min((coff+clen), num_particles_in_file[current_file])
-                        num = i2 - i1
-                        if num > 0:
-                            data[name][offset[name]:offset[name]+num] = dset[i1:i2,...]
-                            offset[name] += num
+                    data[name][offset[name]:offset[name]+num_to_read,...] = sliced_reader.read(dset)
+                    offset[name] += num_to_read
 
         # Check for the case where no particles were read
         if len(offset) == 0:
