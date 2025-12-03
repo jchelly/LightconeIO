@@ -27,6 +27,7 @@ runs:
           ${{ inputs.image }}
 
     - name: Wait until hdfstream service is responding
+      shell: bash
       run: |
         for i in {1..30}; do
           status=$(docker inspect --format='{{.State.Health.Status}}' hdfstream)
