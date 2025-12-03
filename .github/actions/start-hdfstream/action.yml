@@ -25,7 +25,6 @@ runs:
           -v ${{ inputs.data-dir }}:/opt/hdfstream/data:ro \
           -e HDFSTREAM_PREFIX=${{ inputs.virtual-prefix }} \
           ${{ inputs.image }}
-
     - name: Wait until hdfstream service is responding
       shell: bash
       run: |
