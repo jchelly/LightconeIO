@@ -25,3 +25,16 @@ runs:
           -v ${{ inputs.data-dir }}:/opt/hdfstream/data:ro \
           -e HDFSTREAM_PREFIX=${{ inputs.virtual-prefix }} \
           ${{ inputs.image }}
+
+    - name: Wait until hdfstream service is responding
+      run: |
+        for i in {1..30}; do
+          status=$(docker inspect --format='{{.State.Health.Status}}' hdfstream)
+          if [ "$status" = "healthy" ]; then
+            echo "Service is ready"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "Service did not become healthy in time"
+        exit 1
