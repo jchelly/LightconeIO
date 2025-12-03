@@ -26,13 +26,20 @@ jobs:
           - /tmp/hdfstream:/opt/hdfstream/data:ro
         env:
           HDFSTREAM_PREFIX: tests/data
+        options: >-
+          --name hdfstream
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Copy test data
+    - name: Copy test data to the mounted directory
       run: |
-        cp -r tests/data /tmp/hdfstream/
+        sudo cp -r tests/data /tmp/hdfstream/
+
+    - name: Restart hdfstream to serve checked out data files
+      uses: docker://docker
+      with:
+        args: docker restart hdfstream
 
     - name: Set up Python 3.10
       uses: actions/setup-python@v3
