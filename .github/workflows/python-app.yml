@@ -48,9 +48,9 @@ jobs:
         # flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
     - name: Restart hdfstream to serve checked out data files
-        uses: docker://docker
-        with:
-          args: docker restart hdfstream
+      uses: docker://docker
+      with:
+        args: docker restart hdfstream
 
     - name: Install module
       run: |
