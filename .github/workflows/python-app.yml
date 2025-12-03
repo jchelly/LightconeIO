@@ -23,7 +23,7 @@ jobs:
         ports:
           - 8080:8080
         volumes:
-          - ${{ github.workspace }}/tests/data:/opt/hdfstream/data
+          - /tmp/hdfstream:/opt/hdfstream/data:ro
         env:
           HDFSTREAM_PREFIX: tests/data
 
