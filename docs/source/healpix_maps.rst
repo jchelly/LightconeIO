@@ -6,7 +6,14 @@ quantities in concentric, spherical shells around the observer. The class
 :py:class:`lightcone_io.ShellArray` is used to read these maps. The maps may
 be in a single file per shell or split over many files.
 
-For example::
+The maps can be stored in HDF5 files on the local file system or in
+remote files accessed via a web service.
+
+Opening local HDF5 files
+------------------------
+
+If the outputs you wish to read are stored as HDF5 files on your local
+filesystem, you can open them as follows::
 
   import lightcone_io as lc
 
@@ -18,6 +25,43 @@ For example::
 
   # Open a set of HEALPix maps
   shell = lc.ShellArray(basedir, basename)
+
+You can then access the maps through the ``shell`` object. See below
+for details.
+
+Opening files via the hdfstream service
+---------------------------------------
+
+This module can also access files stored on a remote server using the
+`hdfstream <https://hdfstream-python.readthedocs.io/en/latest>`_
+python module. To do this, first open the directory containing the
+files::
+
+  import hdfstream
+  root = hdfstream.open("cosma", "/")
+
+This returns a :obj:`hdfstream.RemoteDirectory` object. HEALPix maps
+on the server can be read by passing the remote directory object to
+the :py:class:`lightcone_io.ShellArray` class. The base directory name
+is interpreted as a path relative to the remote directory on the
+server::
+
+  import lightcone_io as lc
+
+  # Location of the lightcone output relative to the remote directory
+  basedir="FLAMINGO/L1_m9/L1_m9/healpix_maps/nside_4096"
+
+  # Which lightcone to read
+  basename="lightcone0"
+
+  # Open a set of HEALPix maps on the server
+  shell = lc.ShellArray(basedir, basename, remote_dir=root)
+
+You can then access the maps through the ``shell`` object. The module
+will download data as it is accessed.
+
+Accessing HEALPix map data
+--------------------------
 
 The :py:class:`lightcone_io.ShellArray` object is a sequence of
 :py:class:`lightcone_io.Shell` instances. Individual shells are

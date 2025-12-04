@@ -20,6 +20,7 @@ version = '.'.join(release.split('.')[:2])
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx_autodoc_typehints',
+    'sphinx.ext.intersphinx',
 ]
 
 templates_path = ['_templates']
@@ -33,3 +34,10 @@ html_static_path = ['_static']
 
 # API documentation ordering
 autodoc_member_order = 'bysource'
+
+# This allows linking to sphinx docs of other projects
+intersphinx_mapping = dict(
+    unyt=("https://unyt.readthedocs.io/en/stable/", None),
+    h5py=("https://docs.h5py.org/en/latest/", None),
+    hdfstream=("https://hdfstream-python.readthedocs.io/en/latest/", None),
+)
