@@ -163,7 +163,9 @@ class IndexedLightconeParticleType(LocalOrRemoteFile):
         :rtype: numpy.ndarray
         """
         nside = self.index["nside"]
-        order = self.index["order"].decode() if "order" in self.index else "ring"
+        order = self.index["order"] if "order" in self.index else "ring"
+        if isinstance(order, bytes):
+            order = order.decode()
         if order == "nest":
             nest = True
         elif order == "ring":
