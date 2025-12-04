@@ -13,15 +13,16 @@ class LocalOrRemoteFile:
     def set_directory(self, remote_dir=None):
         self._remote_dir = remote_dir
 
+    def open_direct(self, filename):
+        if getattr(self, "_remote_dir", None) is None:
+            return h5py.File(filename, "r")
+        else:
+            return self._remote_dir[filename]
+
     @contextlib.contextmanager
     def open_file(self, filename):
-        if getattr(self, "_remote_dir", None) is None:
-            # We're opening a local file with h5py
-            with h5py.File(filename, "r") as f:
-                yield f
-        else:
-            # We're opening a remote file with hdfstream
-            yield self._remote_dir[filename]
+        with self.open_direct(filename) as f:
+            yield f
 
 
 def validate_slices(starts, counts):

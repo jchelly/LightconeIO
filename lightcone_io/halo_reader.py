@@ -29,9 +29,9 @@ class HaloLightconeFile(LocalOrRemoteFile):
     """
     def __init__(self, filename, soap_filename=None, remote_dir=None):
         self.set_directory(remote_dir)
-        self._file = self.open_file(filename)
+        self._file = self.open_direct(filename)
         if soap_filename is not None:
-            self._soap_file = self.open_file(soap_filename)
+            self._soap_file = self.open_direct(soap_filename)
         else:
             self._soap_file = None
         self._num_halos_per_pixel = self._file["Index/NumHalosPerPixel"][...]
@@ -193,3 +193,12 @@ class HaloLightconeFile(LocalOrRemoteFile):
         :rtype:  dict of unyt.unyt_array
         """
         return self.read_halos_in_pixels(None, properties)
+
+    def __del__(self):
+        """
+        Close any open files
+        """
+        if self._file:
+            self._file.close()
+        if self._soap_file:
+            self._soap_file.close()
