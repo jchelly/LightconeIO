@@ -1,6 +1,5 @@
 #!/bin/env python
 
-import h5py
 import healpy as hp
 import numpy as np
 import unyt
@@ -45,7 +44,7 @@ def test_read_everything(remote_dir):
     halos = HaloLightconeFile(halo_lightcone_filename, remote_dir=remote_dir)
     data = halos.read_halos(halo_properties)
 
-    # Check values against h5py
+    # Check values against reading the file directly
     with halos.open_file(halo_lightcone_filename) as infile:
         for name in halo_properties:
             assert isinstance(data[name], unyt.unyt_array)
