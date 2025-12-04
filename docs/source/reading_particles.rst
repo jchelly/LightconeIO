@@ -6,6 +6,9 @@ faster access to specified areas of the sky and redshift ranges. These
 post-processed outputs can be read with the class
 :py:class:`lightcone_io.ParticleLightcone`.
 
+The particles can be stored in HDF5 files on the local file system or in
+remote files accessed via a web service.
+
 Opening local HDF5 files
 ------------------------
 
@@ -20,8 +23,8 @@ filesystem, you can open them as follows::
   # Open the lightcone particle output
   lightcone = lc.ParticleLightcone(filename)
 
-Opening files via the hdfstream service
----------------------------------------
+Opening via the hdfstream service
+---------------------------------
 
 This module can also access files stored on a remote server using the
 `hdfstream <https://hdfstream-python.readthedocs.io/en/latest>`_
@@ -33,7 +36,9 @@ files::
 
 This returns a :obj:`hdfstream.RemoteDirectory` object. Particle
 outputs on the server can be opened by passing the remote directory
-object to the :py:class:`lightcone_io.ParticleLightcone` class::
+object to the :py:class:`lightcone_io.ParticleLightcone` class. The
+filename is interpreted as a path relative to the remote directory on
+the server::
 
   import lightcone_io as lc
 

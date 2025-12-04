@@ -29,8 +29,8 @@ filesystem, you can open them as follows::
 You can then access the maps through the ``shell`` object. See below
 for details.
 
-Opening files via the hdfstream service
----------------------------------------
+Opening via the hdfstream service
+---------------------------------
 
 This module can also access files stored on a remote server using the
 `hdfstream <https://hdfstream-python.readthedocs.io/en/latest>`_
