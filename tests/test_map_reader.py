@@ -8,30 +8,30 @@ import pytest
 
 from lightcone_io import ShellArray, Shell, HealpixMap
 
-basedir  = "./tests/data/healpix_maps"
+basedir  = "tests/data/healpix_maps"
 basename = "lightcone1"
-shell_filename = "./tests/data/healpix_maps/lightcone1_shells/shell_{shell_nr}/lightcone1.shell_{shell_nr}.0.hdf5"
+shell_filename = "tests/data/healpix_maps/lightcone1_shells/shell_{shell_nr}/lightcone1.shell_{shell_nr}.0.hdf5"
 maps = ("DarkMatterMass", "NeutrinoMass", "TotalMass")
 nside = 16
 nr_pixels = hp.nside2npix(nside)
 nr_shells = 10
 
 
-def test_open_shellarray():
+def test_open_shellarray(remote_dir):
     """
     Check we can open an array of healpix map shells
     """
-    shells = ShellArray(basedir, basename)
+    shells = ShellArray(basedir, basename, remote_dir=remote_dir)
     assert len(shells) == nr_shells
     for shell in shells:
         assert isinstance(shell, Shell)
 
 
-def test_shell_info():
+def test_shell_info(remote_dir):
     """
     Check that shell metadata is correct
     """
-    shells = ShellArray(basedir, basename)
+    shells = ShellArray(basedir, basename, remote_dir=remote_dir)
     for shell_nr, shell in enumerate(shells):
         assert set(maps) == set(shell.keys())
         with h5py.File(shell_filename.format(shell_nr=shell_nr), "r") as infile:
@@ -43,11 +43,11 @@ def test_shell_info():
         assert shell.comoving_outer_radius.value == r_outer
 
 
-def test_map_info():
+def test_map_info(remote_dir):
     """
     Check that healpix map metadata is correct
     """
-    shells = ShellArray(basedir, basename)
+    shells = ShellArray(basedir, basename, remote_dir=remote_dir)
     shell_nr = 0
     shell = shells[shell_nr]
     with h5py.File(shell_filename.format(shell_nr=shell_nr), "r") as infile:
@@ -60,11 +60,11 @@ def test_map_info():
             assert len(map_data) == infile[name].attrs["number_of_pixels"][0]
 
 
-def test_full_map():
+def test_full_map(remote_dir):
     """
     Read full maps and check pixel values against h5py
     """
-    shells = ShellArray(basedir, basename)
+    shells = ShellArray(basedir, basename, remote_dir=remote_dir)
     for shell_nr, shell in enumerate(shells):
         with h5py.File(shell_filename.format(shell_nr=shell_nr), "r") as infile:
             for name in shell:
@@ -84,11 +84,11 @@ for i in range(N):
 
 
 @pytest.mark.parametrize("shell_nr,name,offset,length", test_cases)
-def test_read_pixels(shell_nr, name, offset, length):
+def test_read_pixels(remote_dir, shell_nr, name, offset, length):
     """
     Try reading some pixels from a map and check against h5py
     """
-    map_data = ShellArray(basedir, basename)[shell_nr][name]
+    map_data = ShellArray(basedir, basename, remote_dir=remote_dir)[shell_nr][name]
     pixels = map_data[offset:offset+length].value
     with h5py.File(shell_filename.format(shell_nr=shell_nr), "r") as infile:
         assert np.all(pixels == infile[name][offset:offset+length])

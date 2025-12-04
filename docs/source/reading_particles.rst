@@ -4,7 +4,16 @@ Reading lightcone particle outputs
 Lightcone particle outputs from SWIFT can be post-processed to allow
 faster access to specified areas of the sky and redshift ranges. These
 post-processed outputs can be read with the class
-:py:class:`lightcone_io.ParticleLightcone`::
+:py:class:`lightcone_io.ParticleLightcone`.
+
+The particles can be stored in HDF5 files on the local file system or in
+remote files accessed via a web service.
+
+Opening local HDF5 files
+------------------------
+
+If the outputs you wish to read are stored as HDF5 files on your local
+filesystem, you can open them as follows::
 
   import lightcone_io as lc
 
@@ -13,6 +22,31 @@ post-processed outputs can be read with the class
 
   # Open the lightcone particle output
   lightcone = lc.ParticleLightcone(filename)
+
+Opening via the hdfstream service
+---------------------------------
+
+This module can also access files stored on a remote server using the
+`hdfstream <https://hdfstream-python.readthedocs.io/en/latest>`_
+python module. To do this, first open the directory containing the
+files::
+
+  import hdfstream
+  root = hdfstream.open("cosma", "/")
+
+This returns a :obj:`hdfstream.RemoteDirectory` object. Particle
+outputs on the server can be opened by passing the remote directory
+object to the :py:class:`lightcone_io.ParticleLightcone` class. The
+filename is interpreted as a path relative to the remote directory on
+the server::
+
+  import lightcone_io as lc
+
+  # Location of one of the lightcone particle files relative to the remote directory
+  filename = "FLAMINGO/L1_m9/L1_m9/particle_lightcones/lightcone0_particles/lightcone0_0000.0.hdf5"
+
+  # Open the lightcone particle output
+  lightcone = lc.ParticleLightcone(filename, remote_dir=root)
 
 Lightcone particle metadata
 ---------------------------
