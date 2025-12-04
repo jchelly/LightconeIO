@@ -18,7 +18,7 @@ dependencies = [
     "scipy",
     "tqdm",
     "pytest",
-    "hdfstream>=0.0.21",
+    "hdfstream>=0.0.22",
 ]
 readme = "README.md"
 classifiers = [
