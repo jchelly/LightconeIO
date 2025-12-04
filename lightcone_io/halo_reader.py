@@ -1,15 +1,14 @@
 #!/bin/env python
 
 import numpy as np
-import h5py
 import healpy as hp
 import unyt
 
 from .units import units_from_attributes
-from .utils import IndexedDatasetReader, SlicedDatasetReader
+from .utils import IndexedDatasetReader, SlicedDatasetReader, LocalOrRemoteFile
 
 
-class HaloLightconeFile:
+class HaloLightconeFile(LocalOrRemoteFile):
     """
     Class used to read a single file from the halo lightcone. Each
     file contains halos which were identified in a single snapshot of
@@ -25,11 +24,14 @@ class HaloLightconeFile:
     :type  filename: str
     :param soap_filename: Name of the SOAP output with extra halo properties
     :type  soap_filename: str
+    :param remote_dir: remote directory containing the file, or None
+    :type  remote_dir: hdfstream.RemoteDirectory, or None for local files
     """
-    def __init__(self, filename, soap_filename=None):
-        self._file = h5py.File(filename, "r")
+    def __init__(self, filename, soap_filename=None, remote_dir=None):
+        self.set_directory(remote_dir)
+        self._file = self.open_file(filename)
         if soap_filename is not None:
-            self._soap_file = h5py.File(soap_filename, "r")
+            self._soap_file = self.open_file(soap_filename)
         else:
             self._soap_file = None
         self._num_halos_per_pixel = self._file["Index/NumHalosPerPixel"][...]
