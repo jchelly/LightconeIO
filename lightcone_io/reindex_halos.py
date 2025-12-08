@@ -134,7 +134,7 @@ def reindex_halos(snap_nr, input_lightcone_dir, lightcone_base,
             dataset.attrs["Conversion factor to CGS (not including cosmological corrections"] = [1.0]
             dataset.attrs["Conversion factor to CGS (including cosmological corrections"] = [1.0]
             for dim in ("U_I", "U_L", "U_M", "U_T", "U_t", "a-scale", "h-scale"):
-                dataset.attrs[f"U_{dim} exponent"] = [0.0]
+                dataset.attrs[f"{dim} exponent"] = [0.0]
         property_names.append("InputHalos/SOAPIndex")
 
     comm.barrier()
