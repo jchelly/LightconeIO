@@ -37,8 +37,17 @@ def find_groups(group):
     return all_groups
 
 
+def find_datasets(group):
+    all_datasets = []
+    def store_name(name, obj):
+        if isinstance(obj, h5py.Dataset) and (not name.startswith("Index/")):
+            all_datasets.append(name)
+    group.visititems(store_name)
+    return all_datasets
+
+
 def reindex_halos(snap_nr, input_lightcone_dir, lightcone_base,
-                  output_lightcone_dir, nside, order):
+                  output_lightcone_dir, nside, order, soap_format):
 
     # Get paths to the input and output files
     input_filename = f"{input_lightcone_dir}/{lightcone_base}/lightcone_halos_{snap_nr:04d}.hdf5"
@@ -61,10 +70,11 @@ def reindex_halos(snap_nr, input_lightcone_dir, lightcone_base,
                 for attr_name, attr_val in infile[name].attrs.items():
                     group.attrs[attr_name] = attr_val
             # Overwrite nside and order with new values, if present
+            outfile.require_group("Index")
             outfile["Index"].attrs["nside"] = nside
             outfile["Index"].attrs["order"] = order
             # Get list of dataset names from the input file
-            dataset_names = infile["Lightcone"].attrs["property_names"]
+            dataset_names = find_datasets(infile)
     else:
         group_names = None
         dataset_names = None
@@ -102,6 +112,31 @@ def reindex_halos(snap_nr, input_lightcone_dir, lightcone_base,
             data = psort.fetch_elements(data, order, comm=comm)
             phdf5.collective_write(outfile, dataset_name, data, gzip=6, chunk=chunk_size, comm=comm)
 
+    # Add SOAP index, if not already present and we have a SOAP output
+    property_names = dataset_names.copy()
+    if soap_format is not None and "InputHalos/SOAPIndex" not in dataset_names:
+        comm.barrier()
+        message("Reading TrackId from SOAP catalogue")
+        soap_filename = soap_format.format(snap_nr=snap_nr)
+        with h5py.File(soap_filename, "r", driver="mpio", comm=comm) as soap_file:
+            soap_trackid = phdf5.collective_read(soap_file["InputHalos/HBTplus/TrackId"], comm)
+        message("Reading TrackId from halo lightcone")
+        with h5py.File(input_filename, "r", driver="mpio", comm=comm) as soap_file:
+            lightcone_trackid = phdf5.collective_read(soap_file["InputHalos/HBTplus/TrackId"], comm)
+        message("Computing index of each lightcone halo in SOAP")
+        soap_index = psort.parallel_match(lightcone_trackid, soap_trackid, comm=comm)
+        assert np.all(soap_index >= 0)
+        message("Writing soap index to halo lightcone")
+        with h5py.File(output_filename, "r+", driver="mpio", comm=comm) as outfile:
+            dataset = phdf5.collective_write(outfile, "InputHalos/SOAPIndex", soap_index, gzip=6, chunk=chunk_size, comm=comm)
+            # The input doesn't include this dataset, so can't copy attributes
+            dataset.attrs["Description"] = "Index of the halo in the input SOAP catalogue"
+            dataset.attrs["Conversion factor to CGS (not including cosmological corrections"] = [1.0]
+            dataset.attrs["Conversion factor to CGS (including cosmological corrections"] = [1.0]
+            for dim in ("U_I", "U_L", "U_M", "U_T", "U_t", "a-scale", "h-scale"):
+                dataset.attrs[f"U_{dim} exponent"] = [0.0]
+        property_names.append("InputHalos/SOAPIndex")
+
     comm.barrier()
     message("Copying dataset attributes")
     if comm_rank == 0:
@@ -112,7 +147,8 @@ def reindex_halos(snap_nr, input_lightcone_dir, lightcone_base,
                 output_dataset = outfile[dataset_name]
                 for attr_name, attr_val in input_dataset.attrs.items():
                     output_dataset.attrs[attr_name] = attr_val
-    comm.barrier()
+            outfile["Lightcone"].attrs["property_names"] = property_names
+
     message(f"Snapshot {snap_nr} done.")
 
 
@@ -127,11 +163,13 @@ def run():
     parser.add_argument('output_lightcone_dir',  help='Directory with lightcone particle outputs')
     parser.add_argument("--nside", type=int, default=16, help="HEALPpix map resolution to use to bin halos in the output")
     parser.add_argument("--order", choices=["nest","ring"], default="nest", help="HEALPix pixel ordering scheme")
+    parser.add_argument("--soap-format", type=str, default=None, help="Format string to generate SOAP filenames (use {snap_nr})")
     args = parser.parse_args()
 
     for snap_nr in range(args.start_snap, args.end_snap+1):
         reindex_halos(snap_nr, args.input_lightcone_dir, args.lightcone_base,
-                      args.output_lightcone_dir, args.nside, args.order)
+                      args.output_lightcone_dir, args.nside, args.order,
+                      args.soap_format)
 
 if __name__ == "__main__":
     run()
