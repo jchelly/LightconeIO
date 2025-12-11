@@ -4,9 +4,9 @@
 #SBATCH --tasks-per-node=128
 #SBATCH --cpus-per-task=1
 #SBATCH -o ./logs/L1000N1800/reindex_%x.lightcone%a.%A.out
-#SBATCH -p cosma8-shm
+#SBATCH -p cosma8
 #SBATCH -A dp004
-#SBATCH -t 4:00:00
+#SBATCH -t 12:00:00
 #
 
 module purge
