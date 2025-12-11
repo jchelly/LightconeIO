@@ -2,8 +2,30 @@
 
 import io
 import h5py
+import hdfstream
 import numpy as np
 import pytest
+
+
+def pytest_addoption(parser):
+    parser.addoption("--hdfstream-server", default=None,
+                     help="Hdfstream server URL for tests")
+    parser.addoption("--hdfstream-dir", default="/",
+                     help="Hdfstream directory with test data")
+
+
+@pytest.fixture(scope='module', params=[False, True])
+def remote_dir(request):
+    if request.param:
+        # Will read local files
+        yield None
+    else:
+        # Will read remote files
+        server = request.config.getoption("--hdfstream-server")
+        dirname = request.config.getoption("--hdfstream-dir")
+        if server is None or dirname is None:
+            pytest.skip("Need hdfstream server and directory names for test")
+        yield hdfstream.open(server, dirname)
 
 
 @pytest.fixture(scope='module', params=[(), (0,), (1,), (3,), (3,2)])
@@ -36,3 +58,4 @@ def dataset(request):
     bio.seek(0)
     with h5py.File(bio, 'r') as f:
         yield f["data"]
+

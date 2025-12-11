@@ -15,14 +15,40 @@ sorted in order of their pixel index in a low resolution HEALPix
 map. This makes it possible to extract halos in particular parts of
 the sky.
 
-Reading a halo lightcone file
------------------------------
+The halos can be stored in HDF5 files on the local file system or in
+remote files accessed via a web service.
 
-A halo lightcone file can be opened using the
-:py:class:`lightcone_io.HaloLightconeFile` class::
+Opening local HDF5 files
+------------------------
+
+A halo lightcone file stored on the local file system can be opened
+using the :py:class:`lightcone_io.HaloLightconeFile` class::
 
   import lightcone_io as lc
   halos = lc.HaloLightconeFile(filename)
+
+Opening via the hdfstream service
+---------------------------------
+
+This module can also access files stored on a remote server using the
+`hdfstream <https://hdfstream-python.readthedocs.io/en/latest>`_
+python module. To do this, first open the directory containing the
+files::
+
+  import hdfstream
+  root = hdfstream.open("cosma", "/")
+
+This returns a :obj:`hdfstream.RemoteDirectory` object. Halo lightcone
+outputs on the server can be opened by passing the remote directory
+object to the :py:class:`lightcone_io.HaloLightconeFile` class. The
+filename is interpreted as a path relative to the remote directory on
+the server::
+
+  import lightcone_io as lc
+  halos = lc.HaloLightconeFile(filename, remote_dir=root)
+
+Accessing halo lightcone data
+-----------------------------
 
 We can get a list of the available halo properties with::
 

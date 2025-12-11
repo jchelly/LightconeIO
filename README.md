@@ -27,9 +27,16 @@ make html
 
 ## Running unit tests
 
-There are a few unit tests which can be run with just
+There are some unit tests which can be run with just
 ```
 pytest
 ```
-in the source code directory. Note that test coverage is currently
-very poor!
+in the source directory.  This will test the classes for reading local
+HDF5 files containing HEALPix map, particle and halo lightcone
+data. These tests use downsampled lightcone outputs which are stored
+in the git repository in `tests/data`.
+
+To also test access to remote files:
+```
+pytest --hdfstream-server=<server_url>
+```

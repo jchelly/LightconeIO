@@ -1,6 +1,5 @@
 #!/bin/env python
 
-import h5py
 import healpy as hp
 import numpy as np
 import unyt
@@ -29,48 +28,49 @@ soap_properties = (
 )
 
 
-def test_properties():
+def test_properties(remote_dir):
     """
     Check that the file has the expected set of properties
     """
-    halos = HaloLightconeFile(halo_lightcone_filename)
+    halos = HaloLightconeFile(halo_lightcone_filename, remote_dir=remote_dir)
     assert set(halo_properties) == set(halos.properties)
 
 
-def test_read_everything():
+def test_read_everything(remote_dir):
     """
     Try reading all properties for all halos
     """
     # Read the file
-    data = HaloLightconeFile(halo_lightcone_filename).read_halos(halo_properties)
+    halos = HaloLightconeFile(halo_lightcone_filename, remote_dir=remote_dir)
+    data = halos.read_halos(halo_properties)
 
-    # Check values against h5py
-    with h5py.File(halo_lightcone_filename, "r") as infile:
+    # Check values against reading the file directly
+    with halos.open_file(halo_lightcone_filename) as infile:
         for name in halo_properties:
             assert isinstance(data[name], unyt.unyt_array)
             assert np.all(data[name].value == infile[name][...])
 
 
-def test_read_everything_with_soap():
+def test_read_everything_with_soap(remote_dir):
     """
     Try reading all properties for all halos. This version reads m200c from
     the SOAP file too.
     """
     # Open the file
-    halos = HaloLightconeFile(halo_lightcone_filename, soap_filename=soap_filename)
+    halos = HaloLightconeFile(halo_lightcone_filename, soap_filename=soap_filename, remote_dir=remote_dir)
 
     # Read all properties
     data = halos.read_halos(halo_properties+soap_properties)
 
     # Check values against halo lightcone file
-    with h5py.File(halo_lightcone_filename, "r") as infile:
+    with halos.open_file(halo_lightcone_filename) as infile:
         for name in halo_properties:
             assert isinstance(data[name], unyt.unyt_array)
             assert np.all(data[name].value == infile[name][...])
 
     # Check values against SOAP
     soap_index = data["InputHalos/SOAPIndex"].value
-    with h5py.File(soap_filename, "r") as infile:
+    with halos.open_file(soap_filename) as infile:
         for name in soap_properties:
             assert isinstance(data[name], unyt.unyt_array)
             assert np.all(data[name].value == infile[name][...][soap_index,...])
@@ -89,18 +89,18 @@ def halo_id(pos):
     return halo_id
 
 
-def try_read_radius(vector, radius, properties):
+def try_read_radius(vector, radius, properties, remote_dir):
     """
     Read halos in the specified radius about a vector and check that we get
     all of the halos within the radius.
     """
     # Read the specified halos and assign unique IDs to them
-    partial_halos = HaloLightconeFile(halo_lightcone_filename)
+    partial_halos = HaloLightconeFile(halo_lightcone_filename, remote_dir=remote_dir)
     partial_data = partial_halos.read_halos_in_radius(vector, radius, halo_properties)
     partial_halo_ids = halo_id(partial_data["Lightcone/HaloCentre"])
 
     # Read all halos and assign unique IDs to them
-    with h5py.File(halo_lightcone_filename, "r") as infile:
+    with partial_halos.open_file(halo_lightcone_filename) as infile:
         full_data = {}
         for name in partial_data:
             full_data[name] = infile[name][...]
@@ -123,28 +123,28 @@ def try_read_radius(vector, radius, properties):
         assert (angle > radius) or halo_was_read[i]
 
 
-def try_read_radius_with_soap(vector, radius):
+def try_read_radius_with_soap(vector, radius, remote_dir):
     """
     Read halos in the specified radius about a vector and check that we get
     the right values from SOAP.
     """
     # Read the specified halos
-    partial_halos = HaloLightconeFile(halo_lightcone_filename, soap_filename=soap_filename)
+    partial_halos = HaloLightconeFile(halo_lightcone_filename, soap_filename=soap_filename, remote_dir=remote_dir)
     partial_data = partial_halos.read_halos_in_radius(vector, radius, halo_properties+soap_properties)
 
     # Check SOAP properties against reading the SOAP file directly
     soap_index = partial_data["InputHalos/SOAPIndex"].value
-    with h5py.File(soap_filename, "r") as infile:
+    with partial_halos.open_file(soap_filename) as infile:
         for name in soap_properties:
             assert isinstance(partial_data[name], unyt.unyt_array)
             assert np.all(partial_data[name].value == infile[name][...][soap_index,...])
 
 
-def test_read_zero_radius():
+def test_read_zero_radius(remote_dir):
     """
     Check what happens if we read no halos
     """
-    try_read_radius(np.asarray((1, 0, 0), dtype=float), 0.0, halo_properties)
+    try_read_radius(np.asarray((1, 0, 0), dtype=float), 0.0, halo_properties, remote_dir)
 
 
 def random_normalized_vectors(N, rng):
@@ -164,9 +164,9 @@ for i in range(N):
     test_cases.append((test_vectors[i,:], test_radii[i]))
 
 @pytest.mark.parametrize("vector,radius", test_cases)
-def test_read_radius(vector, radius):
-    try_read_radius(vector, radius, halo_properties)
+def test_read_radius(vector, radius, remote_dir):
+    try_read_radius(vector, radius, halo_properties, remote_dir)
 
 @pytest.mark.parametrize("vector,radius", test_cases)
-def test_read_radius_with_soap(vector, radius):
-    try_read_radius_with_soap(vector, radius)
+def test_read_radius_with_soap(vector, radius, remote_dir):
+    try_read_radius_with_soap(vector, radius, remote_dir)

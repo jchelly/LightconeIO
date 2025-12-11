@@ -8,9 +8,10 @@ import h5py
 import unyt
 
 import lightcone_io.units
+from lightcone_io.utils import LocalOrRemoteFile
 
 
-class HealpixMap(collections.abc.Sequence):
+class HealpixMap(collections.abc.Sequence, LocalOrRemoteFile):
     """
     Class used to read lightcone HEALPix maps written out by SWIFT.
     Numpy-style indexing can be used to read pixels from the map.
@@ -19,17 +20,18 @@ class HealpixMap(collections.abc.Sequence):
     :type  filenames: list of str
     :param map_name: name of the map to read
     :type  map_name: str
-
+    :param remote_dir: remote directory containing the file, or None
+    :type  remote_dir: hdfstream.RemoteDirectory, or None for local files
     """
-    def __init__(self, filenames, map_name):
-
+    def __init__(self, filenames, map_name, remote_dir=None):
+        self.set_directory(remote_dir)
         self._filenames = filenames
         self._map_name  = map_name
         self._nr_pixels = None
 
     def _set_metadata(self):
         if self._nr_pixels is None:
-            with h5py.File(self._filenames[0], "r") as infile:
+            with self.open_file(self._filenames[0]) as infile:
                 self._nr_pixels = infile[self._map_name].attrs["number_of_pixels"][0]
                 self._nside = infile[self._map_name].attrs["nside"][0]
                 self._dtype = infile[self._map_name].dtype
@@ -114,23 +116,24 @@ class HealpixMap(collections.abc.Sequence):
             file_offset = file_nr*self._pix_per_file
 
             # Open this file
-            infile = h5py.File(self._filenames[file_nr], "r")
-            nr_pix_in_file = infile[self._map_name].shape[0]
+            with self.open_file(self._filenames[file_nr]) as infile:
 
-            # Find range of pixels to read from this file
-            i1 = start - file_offset
-            if i1 < 0:
-                i1 = 0
-            i2 = stop - file_offset
-            if i2 > nr_pix_in_file:
-                i2 = nr_pix_in_file
+                # Find number of pixels in the file
+                nr_pix_in_file = infile[self._map_name].shape[0]
 
-            # Read pixels
-            if i2 > i1:
-                nr_to_read = i2 - i1
-                pixels[output_offset:output_offset+nr_to_read] = infile[self._map_name][i1:i2]
-                output_offset += nr_to_read
-            infile.close()
+                # Find range of pixels to read from this file
+                i1 = start - file_offset
+                if i1 < 0:
+                    i1 = 0
+                i2 = stop - file_offset
+                if i2 > nr_pix_in_file:
+                    i2 = nr_pix_in_file
+
+                # Read pixels
+                if i2 > i1:
+                    nr_to_read = i2 - i1
+                    pixels[output_offset:output_offset+nr_to_read] = infile[self._map_name][i1:i2]
+                    output_offset += nr_to_read
 
         assert output_offset == (stop-start)
 
@@ -166,7 +169,7 @@ class HealpixMap(collections.abc.Sequence):
         return self.read_pixels(start, stop)
 
 
-class Shell(collections.abc.Mapping):
+class Shell(collections.abc.Mapping, LocalOrRemoteFile):
     """
     Dict-like container for all of the :class:`HealpixMap` instances
     associated with a lightcone shell. Subscripting a :class:`Shell`
@@ -178,9 +181,11 @@ class Shell(collections.abc.Mapping):
     :type  basename: str
     :param shell_nr: index of the lightcone shell to read
     :type  shell_nr: int
-
+    :param remote_dir: remote directory containing the file, or None
+    :type  remote_dir: hdfstream.RemoteDirectory, or None for local files
     """
-    def __init__(self, basedir, basename, shell_nr):
+    def __init__(self, basedir, basename, shell_nr, remote_dir=None):
+        self.set_directory(remote_dir)
 
         # Find all files that make up this shell
         self.filenames = []
@@ -191,7 +196,7 @@ class Shell(collections.abc.Mapping):
                      (basedir, basename, shell_nr, basename, shell_nr, file_nr))
             self.filenames.append(fname)
             if file_nr == 0:
-                with h5py.File(fname, "r") as infile:
+                with self.open_file(fname) as infile:
                     nr_files = int(infile["Shell"].attrs["nr_files_per_shell"][0])
                     length_unit_cgs = float(infile["Units"].attrs["Unit length in cgs (U_L)"][0])
                     self.comoving_inner_radius = infile["Shell"].attrs["comoving_inner_radius"][0]
@@ -209,7 +214,7 @@ class Shell(collections.abc.Mapping):
         # Create the map objects
         self._maps = {}
         for map_name in self.map_names:
-            self._maps[map_name] = HealpixMap(self.filenames, map_name)
+            self._maps[map_name] = HealpixMap(self.filenames, map_name, self._remote_dir)
 
     def __getitem__(self, key):
         return self._maps[key]
@@ -222,7 +227,7 @@ class Shell(collections.abc.Mapping):
         return len(self._maps)
 
 
-class ShellArray(collections.abc.Sequence):
+class ShellArray(collections.abc.Sequence, LocalOrRemoteFile):
     """
     Sequence-like container for a set of lightcone shells. This class is
     the recommended way to read lightcone HEALPix maps.
@@ -233,12 +238,15 @@ class ShellArray(collections.abc.Sequence):
     :type  basedir: str
     :param basename: name of the subdirectory for this lightcone (e.g. ``lightcone0``)
     :type  basename: str
+    :param remote_dir: remote directory containing the file, or None
+    :type  remote_dir: hdfstream.RemoteDirectory, or None for local files
     """
-    def __init__(self, basedir, basename):
+    def __init__(self, basedir, basename, remote_dir=None):
+        self.set_directory(remote_dir)
 
         # Get number of shells from the index file
         fname = basedir+"/"+basename+"_index.hdf5"
-        with h5py.File(fname, "r") as infile:
+        with self.open_file(fname) as infile:
             self.nr_shells = infile["Lightcone"].attrs["nr_shells"][0]
 
         self.basedir = basedir
@@ -253,7 +261,7 @@ class ShellArray(collections.abc.Sequence):
     def __getitem__(self, index):
         # Initialize shell on access, if we didn't already
         if self._shell[index] is None:
-            self._shell[index] = Shell(self.basedir, self.basename, index)
+            self._shell[index] = Shell(self.basedir, self.basename, index, self._remote_dir)
         return self._shell[index]
 
     def __len__(self):
