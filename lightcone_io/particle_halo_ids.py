@@ -149,10 +149,14 @@ def read_lightcone_halo_positions_and_radii(args, radius_name, mass_name):
 
         # WILL UPDATES: this will have to be updated to work with HBT-SOAP. 
         #       If you are not using a soap parameter for the radius_name, you should not remove the radius_name from the soap_datasets list, but istead we will use a set radius for its attributes. 
-        soap_datasets = ("InputHalos/HaloCatalogueIndex", "BoundSubhalo/EncloseRadius", mass_name)
+        #soap_datasets = ("InputHalos/HaloCatalogueIndex", "BoundSubhalo/EncloseRadius", mass_name) # Most recent will version. 
         # Datasets to read from SOAP
         #soap_datasets = ("VR/ID", radius_name, mass_name) 
         #soap_datasets = ("InputHalos/HaloCatalogueIndex", radius_name, mass_name)
+
+        # SAM UPDATES: Trying this
+        soap_datasets = ("InputHalos/HaloCatalogueIndex", radius_name, mass_name)
+
 
 
 
@@ -180,6 +184,16 @@ def read_lightcone_halo_positions_and_radii(args, radius_name, mass_name):
         # Ensure radii are in comoving units
         radius_a_exponent = float(soap_data[radius_name].attrs["a-scale exponent"])
         soap_data[radius_name] *= a**(radius_a_exponent-1.0)
+
+        # SAM UPDATES: 2x radii
+        soap_data[radius_name] *= 2.0
+        if comm_rank == 0:
+            r = halo_lightcone_data[radius_name]
+            message(f"Using radius {radius_name}: "
+                    f"median={np.median(r):.3e}, "
+                    f"min={np.min(r):.3e}, "
+                    f"max={np.max(r):.3e}")
+
 
         # Match lightcone halos at this snapshot to SOAP halos by ID
         message("Finding lightcone halos in SOAP output")
@@ -488,14 +502,23 @@ def main(args):
     # Determine method to deal with overlapping halos
     overlap_method = overlap_methods[args.overlap_method]
     message(f"Halo overlap method: {args.overlap_method}")
-    message(f"Halo radius definition: {args.soap_so_name}")
+
+    # SAM UPDATES: changed this
+    message("Halo radius definition: 2 × BoundSubhaloProperties/HalfMassRadiusBaryons")
+
 
     # Read in position and radius for halos in the lightcone
     #  WILL UPDATES: radius_name and mass_name will need to be changed to not only include SO values (centrals only)
     #  radius name a) I would set the radius name to None and instead just use a physical apature or b) use another radius that is a SOAP property but not only for centrals e.g.) BoundSubhalo/EncloseRadius
     #  mass_name b) If you still want to use a mass to weight how overlapping particles are allocated you will either have to use the BoundSubhalo/TotalMass or some other proxy like BoundSubhalo/MaximumCircularVelocity.
-    radius_name = f"{args.soap_so_name}/SORadius" 
-    mass_name = f"{args.soap_so_name}/TotalMass"
+    # radius_name = f"{args.soap_so_name}/SORadius" 
+    # mass_name = f"{args.soap_so_name}/TotalMass"
+
+    # SAM UPDATES: Trying this
+    radius_name = "BoundSubhaloProperties/HalfMassRadiusBaryons"
+    mass_name   = "BoundSubhaloProperties/TotalMass"
+
+
     halo_lightcone_data = read_lightcone_halo_positions_and_radii(args, radius_name, mass_name) 
 
     # Locate the particle data
@@ -644,8 +667,8 @@ if __name__ == "__main__":
     parser.add_argument('halo_lightcone_filenames', help='Format string to generate halo lightcone filenames')
     parser.add_argument('soap_filenames', help='Format string to generate SOAP filenames')
     parser.add_argument('output_dir',     help='Where to write the output')
-    parser.add_argument('--soap-so-name', type=str, default="SO/200_crit",
-                        help='Name of SOAP group with the halo mass and radius, e.g. "SO/200_crit"')
+    #parser.add_argument('--soap-so-name', type=str, default="SO/200_crit",
+    #                    help='Name of SOAP group with the halo mass and radius, e.g. "SO/200_crit"')  # SAM UPDATED TO REMOVE
     parser.add_argument('--overlap-method', type=str, default="fractional-radius", choices=list(overlap_methods),
                         help="How to assign particles which are in overlapping halos")
     args = parser.parse_args()
