@@ -62,11 +62,16 @@ def read_lightcone_halo_positions_and_radii(args, radius_name, mass_name):
     # you will need to update all instances where the old property names are used: "Pos_minpot" -> "Lightcone/HaloCentre",  "SnapNum" -> "SnapshotNumber", ect...
     # I have now also included the SOAP index, this will allow you to now read in the 
 
+    # update header reading to new file structure 
+
     halo_lightcone_datasets = ("Lightcone/HaloCentre", "Lightcone/SnapshotNumber", "InputHalos/HaloCatalogueIndex","InputHalos/SOAPIndex") 
-    mf = phdf5.MultiFile(args.halo_lightcone_filenames, file_nr_attr=("Header", "NumberOfFiles"), comm=comm)
+    #mf = phdf5.MultiFile(args.halo_lightcone_filenames, file_nr_attr=("Header", "NumberOfFiles"), comm=comm)  # Needs changing
+    first_snap_nr=73 # z = 0.2 snapshot of L1000N1800 sim
+    final_snap_nr=77 # z = 0 snapshot of L1000N1800 sim
+    mf = phdf5.MultiFile(args.halo_lightcone_filenames, file_idx=np.arange(first_snap_nr, final_snap_nr+1), comm=comm)
+
+
     halo_lightcone_data = mf.read(halo_lightcone_datasets, group="/", read_attributes=True)
-
-
     # Store index in halo lightcone of each halo
     #nr_local_halos = len(halo_lightcone_data["ID"])
     nr_local_halos = len(halo_lightcone_data["InputHalos/HaloCatalogueIndex"]) # WILL UPDATES: update property name "ID" -> "InputHalos/HaloCatalogueIndex"
@@ -167,7 +172,7 @@ def read_lightcone_halo_positions_and_radii(args, radius_name, mass_name):
         # Get the expansion factor of this snapshot
         if comm_rank == 0:
             with h5py.File(args.soap_filenames % {"snap_nr" : snapnum}, "r") as infile:
-                a = float(infile["SWIFT"]["Header"].attrs["Scale-factor"])
+                a = float(infile["SWIFT"]["Header"].attrs["Scale-factor"])  # This is fine
         else:
             a = None
         a = comm.bcast(a)
@@ -219,8 +224,8 @@ def read_lightcone_index(args):
     
     # Particle types which may be in the lightcone:
     #type_names = ("BH", "DM", "Gas", "Neutrino", "Stars") # WILL UPDATES: remove the particle types you don't care about
-    #type_names = ("BH", "Gas", "Stars") # WILL UPDATES: remove the particle types you don't care about
-    type_names = ("Stars") # WILL UPDATES: remove the particle types you don't care about
+    type_names = ("BH", "Gas", "Stars") # WILL UPDATES: remove the particle types you don't care about
+    #type_names = ("Stars") # WILL UPDATES: remove the particle types you don't care about
 
     type_z_range = {}
 
@@ -596,7 +601,12 @@ def main(args):
         "Subhalo/ID",
         "Subhalo/SnapNum",
     )
-    mf_in = phdf5.MultiFile(args.halo_lightcone_filenames, file_nr_attr=("Header", "NumberOfFiles"), comm=comm)
+    # mf_in = phdf5.MultiFile(args.halo_lightcone_filenames, file_nr_attr=("Header", "NumberOfFiles"), comm=comm) # needs changing to new file structure
+
+    first_snap_nr=73 # z = 0.2 snapshot of L1000N1800 sim
+    final_snap_nr=77 # z = 0 snapshot of L1000N1800 sim
+    mf_in = phdf5.MultiFile(args.halo_lightcone_filenames, file_idx=np.arange(first_snap_nr, final_snap_nr+1), comm=comm)
+
     halo_lightcone_data = mf_in.read(halo_properties, read_attributes=True)
     halo_lightcone_data["Subhalo/ID"] = halo_lightcone_data["Subhalo/ID"].astype(np.int64) # Avoid using unsigned int
 
