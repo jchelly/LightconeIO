@@ -188,11 +188,7 @@ def read_lightcone_halo_positions_and_radii(args, radius_name, mass_name):
         # SAM UPDATES: 2x radii
         soap_data[radius_name] *= 2.0
         if comm_rank == 0:
-            r = halo_lightcone_data[radius_name]
-            message(f"Using radius {radius_name}: "
-                    f"median={np.median(r):.3e}, "
-                    f"min={np.min(r):.3e}, "
-                    f"max={np.max(r):.3e}")
+            message(f"Using radius {radius_name}")
 
 
         # Match lightcone halos at this snapshot to SOAP halos by ID
@@ -203,8 +199,12 @@ def read_lightcone_halo_positions_and_radii(args, radius_name, mass_name):
 
         # WILL UPDATES: we have already done the matching step by reading in the "InputHalos/SOAPIndex" so we can replace it
         #ptr = psort.parallel_match(halo_lightcone_data["ID"][i1:i2], soap_data["VR/ID"], comm=comm)
-        ptr = halo_lightcone_data["InputHalos/SOAPIndex"][i1:i2]
-        assert np.all(ptr>=0) # All halos in the lightcone should be found in SOAP
+
+
+        ptr = halo_lightcone_data["InputHalos/SOAPIndex"][i1:i2]  -1 # SAM UPDATE: SOAPIndex is 1 based.
+        #assert np.all(ptr>=0) # All halos in the lightcone should be found in SOAP
+
+        assert np.all((ptr >= 0) & (ptr < len(soap_data[radius_name]))) # SAM UPDATE: All halos in the lightcone should be found in SOAP
 
         # Allocate storage for radii now that we know what dtype SOAP uses
         if halo_lightcone_data[radius_name] is None:
