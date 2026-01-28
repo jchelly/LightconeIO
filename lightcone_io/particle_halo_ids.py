@@ -199,6 +199,7 @@ def read_lightcone_halo_positions_and_radii(args, radius_name, mass_name):
 
         # WILL UPDATES: we have already done the matching step by reading in the "InputHalos/SOAPIndex" so we can replace it
         #ptr = psort.parallel_match(halo_lightcone_data["ID"][i1:i2], soap_data["VR/ID"], comm=comm)
+
         ptr = halo_lightcone_data["InputHalos/SOAPIndex"][i1:i2]#  
         assert np.all(ptr>=0) # All halos in the lightcone should be found in SOAP BACK
 
@@ -501,7 +502,7 @@ def main(args):
     message(f"Halo overlap method: {args.overlap_method}")
 
     # SAM UPDATES: changed this
-    message("Halo radius definition: 2 × BoundSubhaloProperties/HalfMassRadiusBaryons")
+    message("Halo radius definition: BoundSubhalo/EncloseRadius")
 
 
     # Read in position and radius for halos in the lightcone
@@ -512,8 +513,8 @@ def main(args):
     # mass_name = f"{args.soap_so_name}/TotalMass"
 
     # SAM UPDATES: Trying this
-    radius_name = "BoundSubhaloProperties/HalfMassRadiusBaryons"
-    mass_name   = "BoundSubhaloProperties/TotalMass"
+    radius_name = "BoundSubhalo/EncloseRadius"
+    mass_name   = "BoundSubhalo/TotalMass"
 
 
     halo_lightcone_data = read_lightcone_halo_positions_and_radii(args, radius_name, mass_name) 
