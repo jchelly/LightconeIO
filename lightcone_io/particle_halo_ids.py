@@ -644,19 +644,6 @@ def main(args):
         part_pos_near = part_pos[near_mask]
         del part_pos, part_r  # free memory
 
-        # (Optional) rebalance ONLY near particles across MPI ranks
-        nr_near_per_rank = np.asarray(comm.allgather(part_pos_near.shape[0]), dtype=int)
-        nr_near_total = int(np.sum(nr_near_per_rank))
-        nr_near_balanced = np.zeros_like(nr_near_per_rank)
-        nr_av = nr_near_total // comm_size
-        nr_near_balanced[:] = nr_av
-        nr_near_balanced[:nr_near_total % comm_size] += 1
-        assert int(np.sum(nr_near_balanced)) == nr_near_total
-        part_pos_near = psort.repartition(part_pos_near, ndesired=nr_near_balanced, comm=comm)
-
-        max_nr_parts = comm.allreduce(part_pos_near.shape[0], op=MPI.MAX)
-        min_nr_parts = comm.allreduce(part_pos_near.shape[0], op=MPI.MIN)
-        message(f"No. of NEAR particles per rank min={min_nr_parts}, max={max_nr_parts}")
 
         # Assign group indexes only for near particles
         message("Assigning group indexes (near particles only)")
