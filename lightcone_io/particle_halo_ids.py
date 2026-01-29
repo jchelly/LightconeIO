@@ -611,96 +611,88 @@ def main(args):
     create_files = True
     for ptype in type_z_range:
 
-        message(f"Processing particle type {ptype}")
+            message(f"Processing particle type {ptype}")
 
-        # Read in positions of lightcone particles of this type
-        message("Reading particles")
-        part_pos = mf.read("Coordinates", group=ptype)
+            # Read in positions of lightcone particles of this type
+            message("Reading particles")
+            part_pos = mf.read("Coordinates", group=ptype)
 
-        # Save the FULL per-rank counts NOW (before deleting / subsetting)
-        nr_parts_per_rank_read = np.asarray(comm.allgather(part_pos.shape[0]), dtype=int)
+            # Record number of particles read from each file (needed for writing)
+            elements_per_file = mf.get_elements_per_file("Coordinates", group=ptype)
+            
+            # Save the FULL per-rank counts NOW (before any operations)
+            nr_parts_per_rank_read = np.asarray(comm.allgather(part_pos.shape[0]), dtype=int)
+            
+            # --- SAM UPDATE: drop particles that cannot possibly overlap low-z halos ---
+            part_r = np.sqrt(np.sum(part_pos**2, axis=1))
+            near_mask = part_r <= (rmax_halo + Rmax)
+            
+            # Log how aggressive the cut is
+            local_n = int(part_pos.shape[0])
+            local_n_near = int(np.count_nonzero(near_mask))
+            n_tot = comm.allreduce(local_n, op=MPI.SUM)
+            n_near = comm.allreduce(local_n_near, op=MPI.SUM)
+            if comm_rank == 0:
+                message(f"FIX B: {ptype} near particles = {n_near}/{n_tot} ({(n_near/n_tot if n_tot else 0.0):.3%})")
+            
+            # Allocate full-size outputs NOW (default = unassigned for all particles)
+            part_halo_id_full = -np.ones(local_n, dtype=np.int64)
+            part_halo_mass_full = -np.ones(local_n, dtype=np.float32)
+            part_halo_r_frac_full = -np.ones(local_n, dtype=np.float32)
+            
+            # Extract only near particles for processing
+            part_pos_near = part_pos[near_mask]
+            del part_pos, part_r  # free memory
 
-        # Record number of particles read from each file (needed for writing)
-        elements_per_file = mf.get_elements_per_file("Coordinates", group=ptype)
+            max_nr_parts = comm.allreduce(part_pos_near.shape[0], op=MPI.MAX)
+            min_nr_parts = comm.allreduce(part_pos_near.shape[0], op=MPI.MIN)
+            message(f"No. of NEAR particles per rank min={min_nr_parts}, max={max_nr_parts}")
 
-        # --- SAM UPDATE: drop particles that cannot possibly overlap low-z halos ---
-        part_r = np.sqrt(np.sum(part_pos**2, axis=1))
-        near_mask = part_r <= (rmax_halo + Rmax)
+            # Assign group indexes only for near particles (NO REPARTITIONING)
+            message("Assigning group indexes (near particles only)")
 
-        # Log how aggressive the cut is
-        local_n = int(part_pos.shape[0])
-        local_n_near = int(np.count_nonzero(near_mask))
-        n_tot = comm.allreduce(local_n, op=MPI.SUM)
-        n_near = comm.allreduce(local_n_near, op=MPI.SUM)
-        if comm_rank == 0:
-            message(f"FIX B: {ptype} near particles = {n_near}/{n_tot} ({(n_near/n_tot if n_tot else 0.0):.3%})")
+            halo_id = halo_lightcone_data["IndexInHaloLightcone"]
+            halo_pos = halo_lightcone_data["Lightcone/HaloCentre"]
+            halo_radius = halo_lightcone_data[radius_name]
+            halo_mass = halo_lightcone_data[mass_name]
 
-        # Allocate full-size outputs (default = unassigned for far particles)
-        part_halo_id_full = -np.ones(local_n, dtype=np.int64)
-        part_halo_mass_full = -np.ones(local_n, dtype=np.float32)
-        part_halo_r_frac_full = -np.ones(local_n, dtype=np.float32)
+            part_halo_id_near, part_halo_mass_near, part_halo_r_frac_near = compute_particle_group_index(
+                halo_id, halo_pos, halo_radius, halo_mass, part_pos_near, overlap_method
+            )
+            del part_pos_near
 
-        # Work only on near subset
-        part_pos_near = part_pos[near_mask]
-        del part_pos, part_r  # free memory
+            # Scatter near results back into full arrays using the mask
+            # (everything is still in original distribution, so mask is valid)
+            part_halo_id_full[near_mask] = part_halo_id_near
+            part_halo_mass_full[near_mask] = part_halo_mass_near
+            part_halo_r_frac_full[near_mask] = part_halo_r_frac_near
 
+            del part_halo_id_near, part_halo_mass_near, part_halo_r_frac_near, near_mask
+            del halo_id, halo_pos, halo_radius, halo_mass
 
-        # Assign group indexes only for near particles
-        message("Assigning group indexes (near particles only)")
+            # END OF SAM UPDATE
 
-        halo_id = halo_lightcone_data["IndexInHaloLightcone"]
-        halo_pos = halo_lightcone_data["Lightcone/HaloCentre"]
-        halo_radius = halo_lightcone_data[radius_name]
-        halo_mass = halo_lightcone_data[mass_name]
+            # Write the output, appending to file if this is not the first particle type
+            message(f"Writing output to {args.output_dir}")
+            mode = "w" if create_files else "r+"
 
-        part_halo_id_near, part_halo_mass_near, part_halo_r_frac_near = compute_particle_group_index(
-            halo_id, halo_pos, halo_radius, halo_mass, part_pos_near, overlap_method
-        )
-        del part_pos_near
+            datasets = {"IndexInHaloLightcone" : part_halo_id_full, "FractionalRadius" : part_halo_r_frac_full, "HaloMass" : part_halo_mass_full}
 
-        # Scatter near results back into full arrays (near_mask is local, so this is safe)
-        part_halo_id_full[near_mask] = part_halo_id_near
-        part_halo_mass_full[near_mask] = part_halo_mass_near
-        part_halo_r_frac_full[near_mask] = part_halo_r_frac_near
+            attributes = {
+                "IndexInHaloLightcone" : halo_lightcone_data["InputHalos/HaloCatalogueIndex"].attrs,
+                "FractionalRadius" : halo_lightcone_data["InputHalos/HaloCatalogueIndex"].attrs,
+                "HaloMass" : halo_lightcone_data[mass_name].attrs,
+            }
+            mf.write(datasets, elements_per_file, output_filenames, mode,
+                    group=ptype, attrs=attributes, gzip=6, shuffle=True)
+                    
+            # Tidy up before reading next particle type
+            del part_halo_id_full
+            del part_halo_r_frac_full
+            del part_halo_mass_full
 
-        del part_halo_id_near, part_halo_mass_near, part_halo_r_frac_near, near_mask
-        del halo_id, halo_pos, halo_radius, halo_mass
-
-        # Restore original partitioning of FULL arrays (for writing out)
-        part_halo_id_full = psort.repartition(part_halo_id_full, ndesired=nr_parts_per_rank_read, comm=comm)
-        part_halo_mass_full = psort.repartition(part_halo_mass_full, ndesired=nr_parts_per_rank_read, comm=comm)
-        part_halo_r_frac_full = psort.repartition(part_halo_r_frac_full, ndesired=nr_parts_per_rank_read, comm=comm)
-
-        # END OF SAM UPDATE
-
-
-        # Write the output, appending to file if this is not the first particle type
-        message(f"Writing output to {args.output_dir}")
-        mode = "w" if create_files else "r+"
-
-        #datasets = {
-        #    "IndexInHaloLightcone" : part_halo_id,
-        #    "FractionalRadius" : part_halo_r_frac,
-        #    "HaloMass" : part_halo_mass,
-        #}
-        datasets = {"IndexInHaloLightcone" : part_halo_id_full, "FractionalRadius" : part_halo_r_frac_full, "HaloMass" : part_halo_mass_full,}
-
-        attributes = {
-            "IndexInHaloLightcone" : halo_lightcone_data["InputHalos/HaloCatalogueIndex"].attrs,
-            "FractionalRadius" : halo_lightcone_data["InputHalos/HaloCatalogueIndex"].attrs,
-            "HaloMass" : halo_lightcone_data[mass_name].attrs,
-        }
-        mf.write(datasets, elements_per_file, output_filenames, mode,
-                 group=ptype, attrs=attributes, gzip=6, shuffle=True)
-                
-        # Tidy up before reading next particle type
-        # SAM updating again
-        del part_halo_id_full
-        del part_halo_r_frac_full
-        del part_halo_mass_full
-
-        # Only need to create new output files for the first type
-        create_files = False
+            # Only need to create new output files for the first type
+            create_files = False
         
     comm.barrier()
 
