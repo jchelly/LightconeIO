@@ -230,46 +230,108 @@ def read_lightcone_halo_positions_and_radii(args, radius_name, mass_name):
 
 def read_lightcone_index(args):
     """
-    Read the index file and determine names of all particle files
-    and which particle types are present
+    SAM UPDATES: REPLACED THIS FUNCTION TO FILTER PARTICLE FILES BASED ON REDSHIFT RANGE
+    Read the index file and build a FILTERED list of particle files to read,
+    keeping only those whose per-file redshift range overlaps [args.zmin, args.zmax]
+    for at least one of the particle types we will process.
+
+    Assumes per-file groups in the index contain attrs:
+      - mpi_rank (int)
+      - file_index (int)
+      - minimum_redshift_<ptype>, maximum_redshift_<ptype> (float or length-1 array)
+    and that particle filenames are:
+      <lightcone_dir>/<lightcone_base>_particles/<lightcone_base>_<file_index:04d>.<mpi_rank>.hdf5
     """
-    
-    # Particle types which may be in the lightcone:
-    #type_names = ("BH", "DM", "Gas", "Neutrino", "Stars") # WILL UPDATES: remove the particle types you don't care about
-    type_names = ("BH", "Gas", "Stars") # WILL UPDATES: remove the particle types you don't care about
-    #type_names = ("Stars") # WILL UPDATES: remove the particle types you don't care about
 
-    type_z_range = {}
+    # Particle types you may want (edit this list)
+    type_names = ("BH", "Gas", "Stars")
 
-    # Now, find the lightcone particle output and read the index info
-    index_file = args.lightcone_dir+"/"+args.lightcone_base+"_index.hdf5"
+    # Helper: robustly turn HDF5 attribute -> python float/int
+    def _scalar(x):
+        return np.asarray(x).item()
+
+    index_file = os.path.join(args.lightcone_dir, f"{args.lightcone_base}_index.hdf5")
+
     if comm_rank == 0:
         with h5py.File(index_file, "r") as index:
             lc = index["Lightcone"]
-            nr_mpi_ranks = int(lc.attrs["nr_mpi_ranks"])
-            final_file_on_rank = lc.attrs["final_particle_file_on_rank"]
+
+            # Global (overall) z ranges per type (same idea as your current code)
+            type_z_range = {}
+            nr_mpi_ranks = int(_scalar(lc.attrs["nr_mpi_ranks"]))
+            final_file_on_rank = np.asarray(lc.attrs["final_particle_file_on_rank"], dtype=int)
+
             for tn in type_names:
-                min_z = float(lc.attrs["minimum_redshift_"+tn])
-                max_z = float(lc.attrs["maximum_redshift_"+tn])
+                min_z = float(_scalar(lc.attrs[f"minimum_redshift_{tn}"]))
+                max_z = float(_scalar(lc.attrs[f"maximum_redshift_{tn}"]))
                 if max_z > min_z:
                     type_z_range[tn] = (min_z, max_z)
-    else:
-        nr_mpi_ranks = None
-        final_file_on_rank = None
-        type_z_range = None
-    nr_mpi_ranks, final_file_on_rank, type_z_range = comm.bcast((nr_mpi_ranks, final_file_on_rank, type_z_range))
 
-    # Report which particle types we found
+            # --- NEW: filter per-file entries by z overlap ---
+            # We scan all groups in the index and look for those that represent an output file.
+            # Your screenshot shows groups like "lightcone0_0000.75" with attrs mpi_rank/file_index/etc.
+            keep_files = set()
+            particle_dir = os.path.join(args.lightcone_dir, f"{args.lightcone_base}_particles")
+
+            zmin_req = float(args.zmin)
+            zmax_req = float(args.zmax)
+
+            for gname, gobj in index.items():
+                # skip the main "Lightcone" group itself etc.
+                if not isinstance(gobj, h5py.Group):
+                    continue
+                if gname == "Lightcone":
+                    continue
+
+                attrs = gobj.attrs
+                # Must have these to map to a real filename
+                if "mpi_rank" not in attrs or "file_index" not in attrs:
+                    continue
+
+                mpi_rank = int(_scalar(attrs["mpi_rank"]))
+                file_index = int(_scalar(attrs["file_index"]))
+
+                # Determine whether this file overlaps the requested z-range for ANY ptype
+                overlaps_any = False
+                for tn in type_z_range.keys():
+                    kmin = f"minimum_redshift_{tn}"
+                    kmax = f"maximum_redshift_{tn}"
+                    if kmin in attrs and kmax in attrs:
+                        fmin = float(_scalar(attrs[kmin]))
+                        fmax = float(_scalar(attrs[kmax]))
+                        # overlap if [fmin,fmax] intersects [zmin_req,zmax_req]
+                        if (fmax > zmin_req) and (fmin < zmax_req):
+                            overlaps_any = True
+                            break
+
+                if overlaps_any:
+                    fn = os.path.join(
+                        particle_dir,
+                        f"{args.lightcone_base}_{file_index:04d}.{mpi_rank}.hdf5"
+                    )
+                    keep_files.add(fn)
+
+    else:
+        type_z_range = None
+        keep_files = None
+
+    # Broadcast results
+    type_z_range, keep_files = comm.bcast((type_z_range, keep_files))
+
+    # Report which particle types we found (global)
     for name in type_z_range:
         min_z, max_z = type_z_range[name]
         message(f"have particles for type {name} from z={min_z} to z={max_z}")
 
-    # Make a full list of files to read
-    all_particle_files = []
-    for rank_nr in range(nr_mpi_ranks):
-        for file_nr in range(final_file_on_rank[rank_nr]+1):
-            filename = f"{args.lightcone_dir}/{args.lightcone_base}_particles/{args.lightcone_base}_{file_nr:04d}.{rank_nr}.hdf5"
-            all_particle_files.append(filename)
+    # Convert to sorted list for stability
+    all_particle_files = sorted(list(keep_files))
+
+    # One compact summary message
+    if comm_rank == 0:
+        message(
+            f"Particle file filter: keeping {len(all_particle_files)} files overlapping "
+            f"z in [{args.zmin}, {args.zmax}]"
+        )
 
     return type_z_range, all_particle_files
 
@@ -717,6 +779,10 @@ if __name__ == "__main__":
     #                    help='Name of SOAP group with the halo mass and radius, e.g. "SO/200_crit"')  # SAM UPDATED TO REMOVE
     parser.add_argument('--overlap-method', type=str, default="fractional-radius", choices=list(overlap_methods),
                         help="How to assign particles which are in overlapping halos")
+    parser.add_argument('--zmin', type=float, default=0.0,
+                    help='Minimum redshift of particle files to read')
+    parser.add_argument('--zmax', type=float, default=0.25,
+                    help='Maximum redshift of particle files to read')
     args = parser.parse_args()
 
     message(f"Starting on {comm_size} MPI ranks")
