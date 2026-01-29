@@ -230,108 +230,56 @@ def read_lightcone_halo_positions_and_radii(args, radius_name, mass_name):
 
 def read_lightcone_index(args):
     """
-    SAM UPDATES: REPLACED THIS FUNCTION TO FILTER PARTICLE FILES BASED ON REDSHIFT RANGE
-    Read the index file and build a FILTERED list of particle files to read,
-    keeping only those whose per-file redshift range overlaps [args.zmin, args.zmax]
-    for at least one of the particle types we will process.
+    SAM UPDATEDS: (Actually reverted back to simlilar version, changes didnt work. )
+    Read the index file and determine names of all particle files
+    and which particle types are present.
 
-    Assumes per-file groups in the index contain attrs:
-      - mpi_rank (int)
-      - file_index (int)
-      - minimum_redshift_<ptype>, maximum_redshift_<ptype> (float or length-1 array)
-    and that particle filenames are:
-      <lightcone_dir>/<lightcone_base>_particles/<lightcone_base>_<file_index:04d>.<mpi_rank>.hdf5
     """
 
-    # Particle types you may want (edit this list)
+    # Particle types you want to process
     type_names = ("BH", "Gas", "Stars")
 
-    # Helper: robustly turn HDF5 attribute -> python float/int
-    def _scalar(x):
-        return np.asarray(x).item()
+    type_z_range = {}
 
     index_file = os.path.join(args.lightcone_dir, f"{args.lightcone_base}_index.hdf5")
 
     if comm_rank == 0:
         with h5py.File(index_file, "r") as index:
             lc = index["Lightcone"]
-
-            # Global (overall) z ranges per type (same idea as your current code)
-            type_z_range = {}
-            nr_mpi_ranks = int(_scalar(lc.attrs["nr_mpi_ranks"]))
+            nr_mpi_ranks = int(np.asarray(lc.attrs["nr_mpi_ranks"]).item())
             final_file_on_rank = np.asarray(lc.attrs["final_particle_file_on_rank"], dtype=int)
 
             for tn in type_names:
-                min_z = float(_scalar(lc.attrs[f"minimum_redshift_{tn}"]))
-                max_z = float(_scalar(lc.attrs[f"maximum_redshift_{tn}"]))
-                if max_z > min_z:
-                    type_z_range[tn] = (min_z, max_z)
-
-            # --- NEW: filter per-file entries by z overlap ---
-            # We scan all groups in the index and look for those that represent an output file.
-            # Your screenshot shows groups like "lightcone0_0000.75" with attrs mpi_rank/file_index/etc.
-            keep_files = set()
-            particle_dir = os.path.join(args.lightcone_dir, f"{args.lightcone_base}_particles")
-
-            zmin_req = float(args.zmin)
-            zmax_req = float(args.zmax)
-
-            for gname, gobj in index.items():
-                # skip the main "Lightcone" group itself etc.
-                if not isinstance(gobj, h5py.Group):
-                    continue
-                if gname == "Lightcone":
-                    continue
-
-                attrs = gobj.attrs
-                # Must have these to map to a real filename
-                if "mpi_rank" not in attrs or "file_index" not in attrs:
-                    continue
-
-                mpi_rank = int(_scalar(attrs["mpi_rank"]))
-                file_index = int(_scalar(attrs["file_index"]))
-
-                # Determine whether this file overlaps the requested z-range for ANY ptype
-                overlaps_any = False
-                for tn in type_z_range.keys():
-                    kmin = f"minimum_redshift_{tn}"
-                    kmax = f"maximum_redshift_{tn}"
-                    if kmin in attrs and kmax in attrs:
-                        fmin = float(_scalar(attrs[kmin]))
-                        fmax = float(_scalar(attrs[kmax]))
-                        # overlap if [fmin,fmax] intersects [zmin_req,zmax_req]
-                        if (fmax > zmin_req) and (fmin < zmax_req):
-                            overlaps_any = True
-                            break
-
-                if overlaps_any:
-                    fn = os.path.join(
-                        particle_dir,
-                        f"{args.lightcone_base}_{file_index:04d}.{mpi_rank}.hdf5"
-                    )
-                    keep_files.add(fn)
-
+                kmin = f"minimum_redshift_{tn}"
+                kmax = f"maximum_redshift_{tn}"
+                if kmin in lc.attrs and kmax in lc.attrs:
+                    min_z = float(np.asarray(lc.attrs[kmin]).item())
+                    max_z = float(np.asarray(lc.attrs[kmax]).item())
+                    if max_z > min_z:
+                        type_z_range[tn] = (min_z, max_z)
     else:
+        nr_mpi_ranks = None
+        final_file_on_rank = None
         type_z_range = None
-        keep_files = None
 
-    # Broadcast results
-    type_z_range, keep_files = comm.bcast((type_z_range, keep_files))
+    nr_mpi_ranks, final_file_on_rank, type_z_range = comm.bcast(
+        (nr_mpi_ranks, final_file_on_rank, type_z_range)
+    )
 
-    # Report which particle types we found (global)
+    # Report which particle types we found
     for name in type_z_range:
         min_z, max_z = type_z_range[name]
         message(f"have particles for type {name} from z={min_z} to z={max_z}")
 
-    # Convert to sorted list for stability
-    all_particle_files = sorted(list(keep_files))
-
-    # One compact summary message
-    if comm_rank == 0:
-        message(
-            f"Particle file filter: keeping {len(all_particle_files)} files overlapping "
-            f"z in [{args.zmin}, {args.zmax}]"
-        )
+    # Build full list of particle files (no filtering)
+    all_particle_files = []
+    for rank_nr in range(nr_mpi_ranks):
+        for file_nr in range(final_file_on_rank[rank_nr] + 1):
+            filename = (
+                f"{args.lightcone_dir}/{args.lightcone_base}_particles/"
+                f"{args.lightcone_base}_{file_nr:04d}.{rank_nr}.hdf5"
+            )
+            all_particle_files.append(filename)
 
     return type_z_range, all_particle_files
 
@@ -629,6 +577,23 @@ def main(args):
 
     halo_lightcone_data = read_lightcone_halo_positions_and_radii(args, radius_name, mass_name) 
 
+    # SAM UPDATES: Filter particles on shells of interest
+
+    halo_pos_all = halo_lightcone_data["Lightcone/HaloCentre"]
+    halo_r_local = np.sqrt(np.sum(halo_pos_all**2, axis=1))
+    local_rmax_halo = float(np.max(halo_r_local)) if halo_r_local.size else 0.0
+    rmax_halo = comm.allreduce(local_rmax_halo, op=MPI.MAX)
+
+    # Global maximum halo radius (in same units as halo_pos/part_pos)
+    local_Rmax = float(np.max(halo_lightcone_data[radius_name])) if len(halo_lightcone_data[radius_name]) else 0.0
+    Rmax = comm.allreduce(local_Rmax, op=MPI.MAX)
+
+    if comm_rank == 0:
+        message(f"FIX B: halo extent rmax_halo={rmax_halo:.6g}, max radius Rmax={Rmax:.6g}, cut at r>{rmax_halo+Rmax:.6g}")
+
+    # END OF UPDATE
+
+
     # Locate the particle data
     type_z_range, all_particle_files = read_lightcone_index(args)
 
@@ -651,6 +616,31 @@ def main(args):
         # Read in positions of lightcone particles of this type
         message(f"Reading particles")
         part_pos = mf.read("Coordinates", group=ptype)
+
+        # --- SAM UPDATE: drop particles that cannot possibly overlap low-z halos ---
+        part_r = np.sqrt(np.sum(part_pos**2, axis=1))
+        near_mask = part_r <= (rmax_halo + Rmax)
+
+        # Count how aggressive this cut is (global, one line)
+        local_n = int(part_pos.shape[0])
+        local_n_near = int(np.count_nonzero(near_mask))
+        n_tot = comm.allreduce(local_n, op=MPI.SUM)
+        n_near = comm.allreduce(local_n_near, op=MPI.SUM)
+        if comm_rank == 0:
+            message(f"FIX B: {ptype} near particles = {n_near}/{n_tot} ({(n_near/n_tot if n_tot else 0.0):.3%})")
+
+        # Allocate full-size outputs (default = unassigned for far particles)
+        part_halo_id_full = -np.ones(part_pos.shape[0], dtype=np.int64)
+        part_halo_mass_full = -np.ones(part_pos.shape[0], dtype=np.float32)
+        part_halo_r_frac_full = -np.ones(part_pos.shape[0], dtype=np.float32)
+
+        # Work only on near subset
+        part_pos_near = part_pos[near_mask]
+        del part_pos, part_r  # free memory
+
+
+
+
 
         # Record number of particles read from each file
         elements_per_file = mf.get_elements_per_file("Coordinates", group=ptype)
@@ -677,7 +667,22 @@ def main(args):
         halo_pos = halo_lightcone_data["Lightcone/HaloCentre"] # WILL UPDATES: update property name for new halo lightcone format
         halo_radius = halo_lightcone_data[radius_name]
         halo_mass = halo_lightcone_data[mass_name]
-        part_halo_id, part_halo_mass, part_halo_r_frac = compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part_pos, overlap_method)
+
+        # SAM UPDATES
+        #part_halo_id, part_halo_mass, part_halo_r_frac = compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part_pos, overlap_method)
+        # Assign group indexes only for near particles
+        part_halo_id_near, part_halo_mass_near, part_halo_r_frac_near = compute_particle_group_index(
+            halo_id, halo_pos, halo_radius, halo_mass, part_pos_near, overlap_method
+        )
+        del part_pos_near
+
+        # Scatter near results back into full arrays
+        part_halo_id_full[near_mask] = part_halo_id_near
+        part_halo_mass_full[near_mask] = part_halo_mass_near
+        part_halo_r_frac_full[near_mask] = part_halo_r_frac_near
+
+        del part_halo_id_near, part_halo_mass_near, part_halo_r_frac_near, near_mask
+
         del part_pos
         del halo_id
         del halo_pos
@@ -685,18 +690,27 @@ def main(args):
         del halo_mass
 
         # Restore original partitioning of particles
-        part_halo_id = psort.repartition(part_halo_id, ndesired=nr_parts_per_rank_read, comm=comm)
-        part_halo_mass = psort.repartition(part_halo_mass, ndesired=nr_parts_per_rank_read, comm=comm)
-        part_halo_r_frac = psort.repartition(part_halo_r_frac, ndesired=nr_parts_per_rank_read, comm=comm)
+        # SAM UPDATES
+        #part_halo_id = psort.repartition(part_halo_id, ndesired=nr_parts_per_rank_read, comm=comm)
+        #part_halo_mass = psort.repartition(part_halo_mass, ndesired=nr_parts_per_rank_read, comm=comm)
+        #part_halo_r_frac = psort.repartition(part_halo_r_frac, ndesired=nr_parts_per_rank_read, comm=comm)
+        part_halo_id_full = psort.repartition(part_halo_id_full, ndesired=nr_parts_per_rank_read, comm=comm)
+        part_halo_mass_full = psort.repartition(part_halo_mass_full, ndesired=nr_parts_per_rank_read, comm=comm)
+        part_halo_r_frac_full = psort.repartition(part_halo_r_frac_full, ndesired=nr_parts_per_rank_read, comm=comm)
+
+
 
         # Write the output, appending to file if this is not the first particle type
         message(f"Writing output to {args.output_dir}")
         mode = "w" if create_files else "r+"
-        datasets = {
-            "IndexInHaloLightcone" : part_halo_id,
-            "FractionalRadius" : part_halo_r_frac,
-            "HaloMass" : part_halo_mass,
-        }
+
+        #datasets = {
+        #    "IndexInHaloLightcone" : part_halo_id,
+        #    "FractionalRadius" : part_halo_r_frac,
+        #    "HaloMass" : part_halo_mass,
+        #}
+        datasets = {"IndexInHaloLightcone" : part_halo_id_full, "FractionalRadius" : part_halo_r_frac_full, "HaloMass" : part_halo_mass_full,}
+
         attributes = {
             "IndexInHaloLightcone" : halo_lightcone_data["InputHalos/HaloCatalogueIndex"].attrs,
             "FractionalRadius" : halo_lightcone_data["InputHalos/HaloCatalogueIndex"].attrs,
@@ -779,10 +793,6 @@ if __name__ == "__main__":
     #                    help='Name of SOAP group with the halo mass and radius, e.g. "SO/200_crit"')  # SAM UPDATED TO REMOVE
     parser.add_argument('--overlap-method', type=str, default="fractional-radius", choices=list(overlap_methods),
                         help="How to assign particles which are in overlapping halos")
-    parser.add_argument('--zmin', type=float, default=0.0,
-                    help='Minimum redshift of particle files to read')
-    parser.add_argument('--zmax', type=float, default=0.25,
-                    help='Maximum redshift of particle files to read')
     args = parser.parse_args()
 
     message(f"Starting on {comm_size} MPI ranks")
