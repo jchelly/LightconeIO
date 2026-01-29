@@ -396,6 +396,52 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part
     del halo_pos_recv
     comm.barrier()
 
+    # --- SAM DEBUGGING UPDATE: how often do ranks get zero halos after exchange? ---
+    local_nhalos = int(halo_id.shape[0])
+    local_nparts = int(part_pos.shape[0])
+
+    # count ranks with zero halos
+    empty_rank = 1 if local_nhalos == 0 else 0
+    n_empty_ranks = comm.allreduce(empty_rank, op=MPI.SUM)
+
+    # also useful: how many particles are sitting on ranks with zero halos?
+    parts_on_empty = local_nparts if local_nhalos == 0 else 0
+    n_parts_on_empty = comm.allreduce(parts_on_empty, op=MPI.SUM)
+    n_parts_total = comm.allreduce(local_nparts, op=MPI.SUM)
+
+    # duplication factor already printed above; this complements it
+    if comm_rank == 0:
+        frac_empty_ranks = n_empty_ranks / comm_size
+        frac_parts_on_empty = (n_parts_on_empty / n_parts_total) if n_parts_total > 0 else 0.0
+        message(
+            f"Halo-exchange result: {n_empty_ranks}/{comm_size} ranks have zero halos "
+            f"({frac_empty_ranks:.1%}); particles on those ranks: {n_parts_on_empty}/{n_parts_total} "
+            f"({frac_parts_on_empty:.1%})."
+        )
+    # END OF SAM DEBUGGING UPDATE
+
+    # SAM SKIPPING UPDATE
+    # If this rank received no halos, we can skip KDTree & halo loop.
+    # Output arrays remain at defaults: id=-1, mass=-1, r_frac=-1 for all particles.
+    if local_nhalos == 0:
+        nr_parts = part_pos.shape[0]
+        part_halo_id = -np.ones(nr_parts, dtype=np.int64)
+        part_halo_mass = -np.ones(nr_parts, dtype=np.float32)
+        part_halo_r_frac = -np.ones(nr_parts, dtype=np.float32)
+
+        # Tidy up and restore original ordering (same as normal path)
+        del halo_id, halo_pos, halo_radius, halo_mass, part_pos
+
+        message("Restoring particle order")
+        order = psort.parallel_sort(part_index, return_index=True, comm=comm)
+        del part_index
+        psort.fetch_elements(part_halo_id, order, result=part_halo_id, comm=comm)
+        psort.fetch_elements(part_halo_mass, order, result=part_halo_mass, comm=comm)
+        psort.fetch_elements(part_halo_r_frac, order, result=part_halo_r_frac, comm=comm)
+
+        return part_halo_id, part_halo_mass, part_halo_r_frac
+    # END OF SAM SKIPPING UPDATE
+
     # Build a kdtree with the local particles
     message("Building kdtree")
     tree = scipy.spatial.KDTree(part_pos)
@@ -414,7 +460,9 @@ def compute_particle_group_index(halo_id, halo_pos, halo_radius, halo_mass, part
     part_halo_r_frac_2[:] = np.finfo(part_halo_r_frac_2.dtype).max  # Initialize min. fractional radius to huge value
 
     # Report maximum halo radius
-    max_radius = comm.allreduce(np.amax(halo_radius), op=MPI.MAX)
+    #max_radius = comm.allreduce(np.amax(halo_radius), op=MPI.MAX) SAM UPDATE: made safter
+    local_max_radius = float(np.max(halo_radius)) if halo_radius.size > 0 else -np.inf
+    max_radius = comm.allreduce(local_max_radius, op=MPI.MAX)
     message(f"Maximum halo radius = {max_radius}")
 
     # Loop over local halos
