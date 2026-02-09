@@ -29,7 +29,7 @@ class LocalOrRemoteFile:
         if getattr(self, "_remote_dir", None) is None:
             return os.path.exists(filename)
         else:
-            return filename in self._remote_dir[name]
+            return filename in self._remote_dir[filename]
 
 
 def validate_slices(starts, counts):
