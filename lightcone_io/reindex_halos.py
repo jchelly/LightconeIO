@@ -20,7 +20,7 @@ import virgo.mpi.parallel_sort as psort
 
 
 # HDF5 chunk size for the output
-chunk_size = 1024*1024
+chunk_size = 8*1024*1024
 
 
 def message(m):
