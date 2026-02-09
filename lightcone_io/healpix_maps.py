@@ -243,30 +243,33 @@ class ShellArray(collections.abc.Sequence, LocalOrRemoteFile):
     """
     def __init__(self, basedir, basename, remote_dir=None):
         self.set_directory(remote_dir)
-
-        # Get number of shells from the index file
-        fname = basedir+"/"+basename+"_index.hdf5"
-        with self.open_file(fname) as infile:
-            self.nr_shells = infile["Lightcone"].attrs["nr_shells"][0]
-
+        self._nr_shells = None # not determined yet
+        self._shell = {} # will cache opened shells
         self.basedir = basedir
         self.basename = basename
-
-        # Creating a Shell instance involves reading a file, so we don't
-        # initialize shells until they're accessed.
-        self._shell = []
-        for shell_nr in range(self.nr_shells):
-            self._shell.append(None)
+        if self.nr_shells == 0:
+            raise FileNotFoundError("No lightcone shells found")
 
     def __getitem__(self, index):
-        # Initialize shell on access, if we didn't already
-        if self._shell[index] is None:
+        if index < 0 or index >= self.nr_shells:
+            raise IndexError("Shell index is out of range")
+        if index not in self._shell:
             self._shell[index] = Shell(self.basedir, self.basename, index, self._remote_dir)
         return self._shell[index]
 
-    def __len__(self):
-        return len(self._shell)
+    @property
+    def nr_shells(self):
+        if self._nr_shells is None:
+            self._nr_shells = 0
+            while True:
+                shell_dir = f"{self.basedir}/{self.basename}_shells/shell_{self._nr_shells}"
+                if not self.path_exists(shell_dir):
+                    break
+                self._nr_shells += 1
+        return self._nr_shells
 
+    def __len__(self):
+        return self.nr_shells
 
 def map_file_name(basedir, basename, shell_nr, file_nr):
     return ("%s/%s_shells/shell_%d/%s.shell_%d.%d.hdf5" %
