@@ -1,12 +1,12 @@
 #!/bin/bash -l
 #
 #SBATCH --nodes=1
-#SBATCH --tasks-per-node=64
+#SBATCH --tasks-per-node=128
 #SBATCH --cpus-per-task=1
-#SBATCH -o ./logs/L1000N1800/reindex_%x.lightcone%a.%A.out
-#SBATCH -p cosma8
+#SBATCH -o ./logs/reindex_lightcone%a.%A.out
+#SBATCH -p cosma8-shm
 #SBATCH -A dp004
-#SBATCH -t 12:00:00
+#SBATCH -t 72:00:00
 #
 
 module purge
@@ -16,10 +16,12 @@ module load python/3.12.4
 #source /cosma/apps/dp004/${USER}/lightcone_env/bin/activate
 activate lightcone_io
 
+export HDF5_USE_FILE_LOCKING=FALSE
+
 # Simulation to do (based on job name)
-sim="L1000N1800/${SLURM_JOB_NAME}"
-first_snap=0
-last_snap=77
+sim="${SLURM_JOB_NAME}"
+first_snap=14
+last_snap=78
 
 # Which lightcone to use
 lightcone_nr="${SLURM_ARRAY_TASK_ID}"
@@ -28,9 +30,9 @@ lightcone_nr="${SLURM_ARRAY_TASK_ID}"
 input_halos="/cosma8/data/dp004/flamingo/Runs/${sim}/hbt_lightcone_halos/"
 
 # Set striping on output location
-outdir="/cosma8/data/dp004/jch/FLAMINGO/HBT/${sim}/reindexed_halos/lightcone${lighcone_nr}"
+outdir="/cosma8/data/dp004/jch/FLAMINGO/HBT/${sim}/reindexed_halos/lightcone${lightcone_nr}"
 \mkdir -p "${outdir}"
-lfs setstripe --stripe-count=1 --stripe-size=8M "${outdir}"
+lfs setstripe --stripe-count=4 --stripe-size=32M "${outdir}"
 
 # Run the code
 mpirun -- python3 -m mpi4py -m lightcone_io.reindex_halos \
