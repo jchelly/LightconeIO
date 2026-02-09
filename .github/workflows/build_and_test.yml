@@ -33,7 +33,7 @@ jobs:
       with:
         data-dir: ./tests/data
         virtual-prefix: tests/data
-        image: ghcr.io/jchelly/hdfstream-api:0.0.5
+        image: ghcr.io/jchelly/hdfstream-api:0.0.6
 
     - name: Install dependencies
       run: |
