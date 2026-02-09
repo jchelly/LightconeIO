@@ -257,10 +257,6 @@ class ShellArray(collections.abc.Sequence, LocalOrRemoteFile):
             self._shell[index] = Shell(self.basedir, self.basename, index, self._remote_dir)
         return self._shell[index]
 
-    def __iter__(self):
-        for i in range(len(self)):
-            yield self[i]
-
     @property
     def nr_shells(self):
         if self._nr_shells is None:
