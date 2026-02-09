@@ -1,5 +1,6 @@
 #!/bin/env python
 
+import os.path
 import contextlib
 import h5py
 import hdfstream
@@ -23,6 +24,12 @@ class LocalOrRemoteFile:
     def open_file(self, filename):
         with self.open_direct(filename) as f:
             yield f
+
+    def path_exists(self, filename):
+        if getattr(self, "_remote_dir", None) is None:
+            return os.path.exists(filename)
+        else:
+            return filename in self._remote_dir[name]
 
 
 def validate_slices(starts, counts):
