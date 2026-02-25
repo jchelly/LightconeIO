@@ -183,17 +183,22 @@ class Shell(collections.abc.Mapping, LocalOrRemoteFile):
     :type  shell_nr: int
     :param remote_dir: remote directory containing the file, or None
     :type  remote_dir: hdfstream.RemoteDirectory, or None for local files
+    :param have_shell_dir: True if each shell is in a shell_X subdirectory, False if not, None if not known
+    :type have_shell_dir: bool or None
     """
-    def __init__(self, basedir, basename, shell_nr, remote_dir=None):
+    def __init__(self, basedir, basename, shell_nr, remote_dir=None, have_shell_dir=None):
         self.set_directory(remote_dir)
+
+        # Check if we have a shell_X subdirectory
+        if have_shell_dir is None:
+            have_shell_dir = self.have_shell_dir(basedir, basename, shell_nr)
 
         # Find all files that make up this shell
         self.filenames = []
         file_nr = 0
         nr_files = 1
         while file_nr < nr_files:
-            fname = ("%s/%s_shells/shell_%d/%s.shell_%d.%d.hdf5" %
-                     (basedir, basename, shell_nr, basename, shell_nr, file_nr))
+            fname = self.filename(basedir, basename, shell_nr, file_nr, have_shell_dir)
             self.filenames.append(fname)
             if file_nr == 0:
                 with self.open_file(fname) as infile:
@@ -215,6 +220,37 @@ class Shell(collections.abc.Mapping, LocalOrRemoteFile):
         self._maps = {}
         for map_name in self.map_names:
             self._maps[map_name] = HealpixMap(self.filenames, map_name, self._remote_dir)
+
+    @staticmethod
+    def filename(basedir, basename, shell_nr, file_nr, have_shell_dir):
+        """
+        Return the filename for one of the shell files.
+
+        :param basedir: directory containing the lightcone outputs
+        :type  basedir: str
+        :param basename: name of the subdirectory for this lightcone (e.g. ``lightcone0``)
+        :type  basename: str
+        :param shell_nr: index of the lightcone shell to read
+        :type  shell_nr: int
+        :param file_nr: index of the lightcone shell file to read
+        :type  file_nr: int
+        :param have_shell_dir: True if each shell is in a shell_X subdirectory, False if not
+        :type have_shell_dir: bool
+        """
+        format_with_dir = "{basedir}/{basename}_shells/shell_{shell_nr}/{basename}.shell_{shell_nr}.{file_nr}.hdf5"
+        format_without_dir = "{basedir}/{basename}_shells/{basename}.shell_{shell_nr}.{file_nr}.hdf5"
+        format_filename = format_with_dir if have_shell_dir else format_without_dir
+        return format_filename.format(basedir=basedir, basename=basename, shell_nr=shell_nr, file_nr=file_nr)
+
+    def have_shell_dir(self, basedir, basename, shell_nr):
+        filename_with_dir = Shell.filename(basedir, basename, shell_nr, 0, True)
+        filename_without_dir = Shell.filename(basedir, basename, shell_nr, 0, False)
+        if self.path_exists(filename_without_dir):
+            return False
+        elif self.path_exists(filename_with_dir):
+            return True
+        else:
+            raise FileNotFoundError("Unable to locate shell file")
 
     def __getitem__(self, key):
         return self._maps[key]
@@ -244,6 +280,7 @@ class ShellArray(collections.abc.Sequence, LocalOrRemoteFile):
     def __init__(self, basedir, basename, remote_dir=None):
         self.set_directory(remote_dir)
         self._nr_shells = None # not determined yet
+        self._have_shell_dir = None
         self._shell = {} # will cache opened shells
         self.basedir = basedir
         self.basename = basename
@@ -254,16 +291,37 @@ class ShellArray(collections.abc.Sequence, LocalOrRemoteFile):
         if index < 0 or index >= self.nr_shells:
             raise IndexError("Shell index is out of range")
         if index not in self._shell:
-            self._shell[index] = Shell(self.basedir, self.basename, index, self._remote_dir)
+            self._shell[index] = Shell(self.basedir, self.basename, index, self._remote_dir, self.have_shell_dir)
         return self._shell[index]
 
     @property
+    def have_shell_dir(self):
+        """
+        Return True if the map files are in shell_X subdirectories.
+
+        :return: True if the shell_0 directory exists, False otherwise
+        :rtype: bool
+        """
+        if self._have_shell_dir is None:
+            if self.path_exists(f"{self.basedir}/{self.basename}_shells/shell_0"):
+                self._have_shell_dir = True
+            else:
+                self._have_shell_dir = False
+        return self._have_shell_dir
+
+    @property
     def nr_shells(self):
+        """
+        Return the number of shells in this lightcone output by counting files.
+
+        :return: the number of shells.
+        :rtype: int
+        """
         if self._nr_shells is None:
             self._nr_shells = 0
             while True:
-                shell_dir = f"{self.basedir}/{self.basename}_shells/shell_{self._nr_shells}"
-                if not self.path_exists(shell_dir):
+                shell_file = Shell.filename(self.basedir, self.basename, self.nr_shells, 0, self.have_shell_dir)
+                if not self.path_exists(shell_file):
                     break
                 self._nr_shells += 1
         return self._nr_shells
