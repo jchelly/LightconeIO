@@ -655,15 +655,21 @@ class ParticleLightcone(collections.abc.Mapping, LocalOrRemoteFile):
                 units["Temperature"] = infile["Units"].attrs["Unit temperature in cgs (U_T)"][0]
                 units["Time"]        = infile["Units"].attrs["Unit time in cgs (U_t)"][0]
 
+                # This attribute has been written inconsistently
+                try:
+                    nr_mpi_ranks = int(metadata["nr_mpi_ranks"][0])
+                except IndexError:
+                    nr_mpi_ranks = int(metadata["nr_mpi_ranks"])
+
                 # Find names of all of the lightcone files
                 filenames = []
-                for i in range(int(metadata["nr_mpi_ranks"][0])):
+                for i in range(nr_mpi_ranks):
                     filenames.append("%s.%d.hdf5" % (basename, i))
 
                 # Find names of extra files
                 if extra_filename is not None:
                     extra_filenames = []
-                    for i in range(int(metadata["nr_mpi_ranks"][0])):
+                    for i in range(nr_mpi_ranks):
                         extra_filenames.append("%s.%d.hdf5" % (extra_basename, i))
                 else:
                     extra_filenames = None
