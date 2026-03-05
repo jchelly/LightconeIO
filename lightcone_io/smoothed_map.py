@@ -209,9 +209,75 @@ def distribute_pixels(comm, nside):
 
     return nr_total_pixels, nr_local_pixels, local_offset, theta_boundary
 
+def rotate_particle_coordinates(input_coords, theta, phi, chunk_size=None):
+    """ 
+    Rotate particles coordinates within the lightcone.
+    params:
+        input_coords (unyt array): the coordinates of particles 
+            within the lightcone [co-moving Mpc], as read from 
+            the particle data of lightcone
+        theta, phi (unyt quantity): angles to rotate particles 
+            coordinates about [degree]
+        chunk_size (int): number of particles to rotate at once,
+            If None rotate all particles.
+
+    returns:
+        output_coords (unyt array): the particle coordiantes 
+            (input_coords) rotated on the sky via healpy rotator 
+            functions
+    """
+    
+    
+    number_of_parts=np.shape(input_coords)[0]
+    
+    rotated_coordinates=unyt.unyt_array(
+        np.zeros((number_of_parts, 3), dtype=np.float), 
+        units=input_coords.units
+    )
+
+    def rotate_vec(input_coords, theta, phi):
+        
+        if theta.value != 0. or phi.value != 0.:
+            rot_custom = hp.Rotator(
+                rot=[theta.to_value(unyt.deg), phi.to_value(unyt.deg)], 
+                inv=True, deg=True, eulertype='ZYX'
+            )
+            rot_matrix = rot_custom._matrix
+            output_arr=hp.rotator.rotateVector(
+                rot_matrix, vec=input_coords[:,0].value, 
+                vy=input_coords[:,1].value, vz=input_coords[:,-1].value
+            ).T
+            return output_arr
+        else:
+            return input_coords
+    
+    message(f"rotating particles on the sky...")
+    
+    if chunk_size is None:
+        rotated_coordinates = rotate_vec(
+            input_coords, theta, phi
+        )
+    else:
+        number_of_chunks=1+number_of_parts // chunk_size
+        for chunk in range(number_of_chunks):
+            start_id = chunk * chunk_size
+            end_id = (chunk+1) * chunk_size
+
+            if end_id > number_of_parts:
+                end_id = number_of_parts+1
+            if start_id >= end_id:
+                break
+
+            rotated_coordinates[start_id:end_id, :] = rotate_vec(
+                input_coords[start_id:end_id, :], theta, phi
+            )
+    
+    return rotated_coordinates
+
 
 def make_sky_map(input_filename, ptype, property_names, particle_value_function,
-                      zmin, zmax, nside, vector = None, radius = None, smooth=True, progress=False):
+                    zmin, zmax, nside, vector = None, radius = None, theta=0., phi=0.,
+                    smooth=True, progress=False):
     """
     Make a new HEALPix map from lightcone particle data
 
@@ -224,6 +290,7 @@ def make_sky_map(input_filename, ptype, property_names, particle_value_function,
     zmax          : maximum redshift to use
     nside         : HEALPix resolution parameter
     smooth        : whether to smooth the map
+    (theta,phi)   : rotate particles coordinates by these angles on the sky
     """
     
     if progress and comm_rank == 0:
@@ -262,6 +329,13 @@ def make_sky_map(input_filename, ptype, property_names, particle_value_function,
     nr_parts_tot = comm.allreduce(particle_data["Coordinates"].shape[0])
     message(f"Read in {nr_parts_tot} particles")
 
+    # rotate particles coordinates
+    if theta !=0. or phi !=0.:
+        message(f"Rotating by (theta, phi): ({theta}, {phi})")
+        part_pos_send = rotate_particle_coordinates(particle_data, theta, phi)
+    else:
+        part_pos_send = particle_data["Coordinates"]
+    
     # Find the particle positions and smoothing lengths
     part_pos_send = particle_data["Coordinates"]
     if smooth:
