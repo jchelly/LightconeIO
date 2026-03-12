@@ -1,10 +1,12 @@
+import sys
 import h5py
 import numpy as np
 from numba import jit
+import unyt
 from unyt import g, cm, mp, erg, s, photons
 
-
-
+#
+COMBINED_XRAY_EMISSIVITY_TABLE_FILENAME = "/cosma8/data/dp004/flamingo/Tables/Xray/X_Ray_table_combined.hdf5"
 
 # The SOAP xray calculator modifed to hanlde multiple redshifts at once
 
@@ -67,18 +69,15 @@ class XrayCalculator_LC:
             table: either a path to the table to be read or a dictionary containing the tables themselves
             bands, observing_types: the bands and observation types, within the band to add to tables.
         '''
-        if type(table_h5)==str:
-            # given a table path, attempt to read the table:
-            try:
-                table = h5py.File(table_path, "r")
-            except ValueError as e:
-                raise Exception("You must pass a working x-ray table path") from e
-        elif (type(table) != dict) or (type(table_h5)==h5py._hl.files.File):
-            # table is not recognisable ....
-            raise Exception("You must pass a working x-ray table path, dictionary or h5py.File object")
+
+        # given a table path, attempt to read the table:
+        try:
+            table = h5py.File(table, "r")
+        except ValueError as e:
+            raise Exception("You must pass a working x-ray table path") from e
 
 
-        self.redshift_bins = table['Bins']['Redshift_bins']
+        self.redshift_bins = table['/Bins/Redshift_bins'][()].astype(np.float32)
         idx_z, _= self.get_index_1d(self.redshift_bins, redshifts)
         ############ make it always load min redshift index value. 
         #min_idx_z = np.min(idx_z)
@@ -86,16 +85,17 @@ class XrayCalculator_LC:
         ############
         max_idx_z = np.max(idx_z) + 2
 
-        self.He_bins = table['Bins']['He_bins']
-        self.missing_elements = table['Bins']['Missing_element']
-        self.element_masses = table['Bins']['Element_masses']
+        self.He_bins = table['/Bins/He_bins'][()].astype(np.float32)
+        self.missing_elements = table['/Bins/Missing_element'][()]
+        self.element_masses = table['Bins/Element_masses'][()].astype(np.float32)
 
-        self.density_bins = table['Bins']['Density_bins']
-        self.temperature_bins = table['Bins']['Temperature_bins']
-        self.redshift_bins = table['Bins']['Redshift_bins']
+        self.density_bins = table['/Bins/Density_bins/'][()].astype(np.float32)
+        self.temperature_bins = table['/Bins/Temperature_bins/'][()].astype(np.float32)
+        self.redshift_bins = table['/Bins/Redshift_bins'][()].astype(np.float32)
 
-        self.log10_solar_metallicity = table['Bins']['Solar_metallicities']
+        self.log10_solar_metallicity = table['/Bins/Solar_metallicities/'][()].astype(np.float32)
         self.solar_metallicity = np.power(10, self.log10_solar_metallicity)
+
 
 
         tables = {}
@@ -337,6 +337,7 @@ class XrayCalculator_LC:
         elif 'photon' in observing_types[0]:
             return luminosities * luminosities_cgs_unyts
 
+
 def xray_map_names(observation_band, observation_type):
     dataset_names={
         "ROSAT_photons_intrinsic":"XrayROSATIntrinsicPhotons",
@@ -356,4 +357,253 @@ def xray_map_names(observation_band, observation_type):
 
 
 
-COMBINED_XRAY_EMISSIVITY_TABLEe_FILENAME = "/cosma8/data/dp004/flamingo/Tables/Xray/X_Ray_table_combined.hdf5"
+def get_observation_type_per_band(
+    unique_observation_types=['photons_intrinsic', 'photons_convolved', 'energies_intrinsic', 'energies_convolved'],
+    unique_observation_bands=['erosita-high','erosita-low','ROSAT']): 
+    
+    observation_bands=unique_observation_bands*len(unique_observation_types)
+    all_observation_type_per_band=[]
+    for obvs_type in unique_observation_types:
+        for i in range(len(unique_observation_bands)):
+            all_observation_type_per_band.append(obvs_type)
+    return observation_bands, all_observation_type_per_band
+
+
+def compute_luminosities(observation_bands, observation_types, particle_data, emissivity_table_filename, part_mask=None):
+    """
+    Compute X-ray luminosities in the given observation bands for each of the given observation types.
+
+    Params
+        observation_bands [list]  : ['erosita-high','erosita-low','ROSAT']
+        observation_types [list]  : ['photons_intrinsic', 'photons_convolved', 'energies_intrinsic', 'energies_convolved']
+        particle_data             : lightcone particle data, as read with lightcone_io.particle_reader
+        emissivity_table_filename : path to emissivity table
+        part_mask [boolean array] : apply this mask to the particle data, compute luminosities for particlse where True.
+
+    Returns
+        Nested List of X-ray luminosities, Nested List of xray names "band_type"
+    """
+    
+    # check all required properties are in particle data. 
+    required_particle_properties = ["ExpansionFactors","Masses", "Densities", "SmoothedElementMassFractions","Temperatures", "StarFormationRates"]
+    missing_properties = []
+    for prop_name in required_particle_properties:
+        if prop_name not in particle_data:
+            missing_properties.append(prop_name)
+            raise ValueError("particle {required_property} not found ....".format(required_property=prop_name))
+    
+    # get all combinations of observation bands and types     
+    all_observation_bands_per_type, all_observation_types_per_band = get_observation_type_per_band(observation_types, observation_bands)
+    
+    # determine if mask is required
+    nparts=len(particle_data["ExpansionFactors"])
+    if part_mask is None:
+        part_mask = np.ones(nparts, dtype=bool)
+    
+    #create X-ray indices
+    xray_calc = XrayCalculator_LC(
+        (1./particle_data["ExpansionFactors"][part_mask])-1., # need to interpolate over the redshift range of particles 
+        emissivity_table_filename, 
+        bands=all_observation_bands_per_type, 
+        observing_types=all_observation_types_per_band)
+    
+    # X-ray indicies 
+    idx_z, idx_he, idx_T, idx_n, t_z, d_z, t_T, d_T, t_nH, d_nH, t_He, d_He, abundance_to_solar, joint_mask, volumes, data_n = xray_calc.find_indices(
+        particle_data["Densities"][part_mask], 
+        particle_data["Temperatures"][part_mask], 
+        particle_data["SmoothedElementMassFractions"][part_mask], 
+        particle_data["Masses"][part_mask], 
+        (1./particle_data["ExpansionFactors"][part_mask])-1., 
+        fill_value = 0
+    )
+
+    #clean up where possible
+    del particle_data["SmoothedElementMassFractions"] 
+    del particle_data["Temperatures"]
+    del particle_data["Densities"]
+    del particle_data["Masses"]
+
+    # make empty nested list for each observation type 
+    xray_luminosities_units_cgs=xray_calc.observation_type_luminosities_cgs_units
+
+    XRAY_VALUES = [ [] for i in range(len(observation_types))]
+    XRAY_NAMES = [ [] for i in range(len(observation_types))]
+
+    #iterate through each observation type and compute X-ray values in required bands 
+    for type_idx, observation_type in enumerate(observation_types):
+        if observation_type not in xray_luminosities_units_cgs:
+            raise ValueError("Cannot find observation type and its matching units")
+
+        # compute luminosities in all bands for given X-ray type
+        if len(observation_bands) == 1:
+            input_types=[observation_type]
+        elif len(observation_bands) > 1:
+            input_types = [observation_type]*len(observation_bands)
+        
+        luminosities = xray_calc.interpolate_X_Ray(
+                idx_z, idx_he, idx_T, idx_n, t_z, d_z, t_T, d_T, t_nH, d_nH, t_He, d_He, abundance_to_solar, joint_mask, volumes, data_n,
+                bands = observation_bands, observing_types = input_types, fill_value = 0)
+
+        # unit check
+        assert luminosities.units == xray_calc.observation_type_luminosities_cgs_units[observation_type]
+        
+
+        # check correct number of x-ray values are returned per band
+        assert np.shape(luminosities)[0] == np.sum(part_mask)
+
+        if len(observation_bands) == 1:
+            luminosities.flatten()
+            
+            XRAY_VALUES[type_idx] = unyt.unyt_array(
+                np.zeros(nparts), 
+                units=xray_calc.observation_type_luminosities_cgs_units[observation_type], dtype=float)
+            
+            XRAY_VALUES[type_idx][part_mask]+=luminosities
+            XRAY_NAMES[type_idx]=[band+"_"+observation_type]
+            
+        elif len(observation_bands) > 1:
+            XRAY_VALUES[type_idx] = unyt.unyt_array(
+                np.zeros((nparts, len(observation_bands))), 
+                units=xray_calc.observation_type_luminosities_cgs_units[observation_type], dtype=float)
+            for axis_idx in range(len(observation_bands)):
+                XRAY_VALUES[type_idx][part_mask, axis_idx] += luminosities[:, axis_idx]
+            
+            XRAY_NAMES[type_idx]=[band+"_"+observation_type for band in observation_bands]
+        
+        #clean up per loop
+        del luminosities
+
+    return XRAY_VALUES, XRAY_NAMES
+
+
+def particle_xray_values_for_map(observation_bands, observation_types, particle_data, emissivity_table_filename, part_mask=None):
+    """
+    Compute X-ray values for all-sky in the given observation bands for each of the given observation types.
+
+    Params
+        observation_bands [list]  : ['erosita-high','erosita-low','ROSAT']
+        observation_types [list]  : ['photons_intrinsic', 'photons_convolved', 'energies_intrinsic', 'energies_convolved']
+        particle_data             : lightcone particle data, as read with lightcone_io.particle_reader
+        emissivity_table_filename : path to emissivity table
+        part_mask [boolean array] : apply this mask to the particle data, compute luminosities for particlse where True.
+
+    Returns
+        Nested List of X-ray values, Nested List of xray map names 
+    """
+    required_particle_properties = ["ExpansionFactors","Coordinates","Masses", "Densities", "SmoothedElementMassFractions","Temperatures", "StarFormationRates"]
+    missing_properties = []
+    for prop_name in required_particle_properties:
+        if prop_name not in particle_data:
+            missing_properties.append(prop_name)
+            raise ValueError("particle {required_property} not found ....".format(required_property=prop_name))
+    
+    # compute the luminosity distance 
+    cdist_cross = np.sqrt(
+        particle_data["Coordinates"][part_mask, 0]**2 + 
+        particle_data["Coordinates"][part_mask, 1]**2 + 
+        particle_data["Coordinates"][part_mask, 2]**2
+        )
+    luminosity_distance_no_z = 4 * np.pi * (cdist_cross**2)
+    
+    # map units in cgs 
+    xray_map_observation_type_units_cgs={ 
+        'photons_intrinsic':unyt.photons * unyt.cm**-2 * unyt.s**-1,
+        'energies_intrinsic':unyt.erg * unyt.cm**-2 * unyt.s**-1,
+        'photons_convolved':unyt.photons * unyt.s**-1,
+        'energies_convolved':unyt.erg * unyt.s**-1,
+        }
+    
+    # indices of redshift component in luminosity distance
+    luminosity_distance_redshift_power_dict={
+        'photons_intrinsic':1,
+        'photons_convolved':1,
+        'energies_intrinsic':2,
+        'energies_convolved':2
+    }
+
+    # get all combinations of observation bands and types     
+    all_observation_bands_per_type, all_observation_types_per_band = get_observation_type_per_band(observation_types, observation_bands)
+    
+    # determine if mask is required
+    nparts=len(particle_data["ExpansionFactors"])
+    if part_mask is None:
+        part_mask = np.ones(nparts, dtype=bool)
+    
+    #create X-ray indices
+    xray_calc = XrayCalculator_LC(
+        (1./particle_data["ExpansionFactors"][part_mask])-1., # need to interpolate over the redshift range of particles 
+        emissivity_table_filename, 
+        bands=all_observation_bands_per_type, 
+        observing_types=all_observation_types_per_band)
+    
+    # X-ray indicies 
+    idx_z, idx_he, idx_T, idx_n, t_z, d_z, t_T, d_T, t_nH, d_nH, t_He, d_He, abundance_to_solar, joint_mask, volumes, data_n = xray_calc.find_indices(
+        particle_data["Densities"][part_mask], 
+        particle_data["Temperatures"][part_mask], 
+        particle_data["SmoothedElementMassFractions"][part_mask], 
+        particle_data["Masses"][part_mask], 
+        (1./particle_data["ExpansionFactors"][part_mask])-1., 
+        fill_value = 0
+    )
+
+    #clean up where possible
+    del particle_data["SmoothedElementMassFractions"] 
+    del particle_data["Temperatures"]
+    del particle_data["Densities"]
+    del particle_data["Masses"]
+    del particle_data["Coordinates"]
+
+    XRAY_VALUES = [ [] for i in range(len(observation_types))]
+    XRAY_NAMES = [ [] for i in range(len(observation_types))]
+
+    #iterate through each observation type and compute X-ray values in required bands 
+    for type_idx, observation_type in enumerate(observation_types):
+        
+        #check observation type has units
+        if observation_type not in xray_map_observation_type_units_cgs:
+            raise ValueError("Cannot find observation type and its matching units")
+        
+        # check observation type has known luminosity distances
+        if observation_type in luminosity_distance_redshift_power_dict:
+            luminosity_distance_redshift_power=luminosity_distance_redshift_power_dict[observation_type]
+        else:
+            raise ValueError("Cannot find observation type and its needed luminosity distance redshift power!!!")
+
+        # compute luminosities in all bands for given X-ray type
+        if len(observation_bands) == 1:
+            input_types=[observation_type]
+        elif len(observation_bands) > 1:
+            input_types = [observation_type]*len(observation_bands)
+        
+        luminosities = xray_calc.interpolate_X_Ray(
+                idx_z, idx_he, idx_T, idx_n, t_z, d_z, t_T, d_T, t_nH, d_nH, t_He, d_He, abundance_to_solar, joint_mask, volumes, data_n,
+                bands = observation_bands, observing_types = input_types, fill_value = 0)
+
+        # unit check
+        assert (luminosities * unyt.cm**-2).units == xray_map_observation_type_units_cgs[observation_type]
+        
+        # check correct number of x-ray values are returned per band
+        assert np.shape(luminosities)[0] == np.sum(part_mask)
+
+        if len(observation_bands) == 1:
+            luminosities.flatten()
+            
+            XRAY_VALUES[type_idx] = unyt.unyt_array(
+                np.zeros(nparts), 
+                units=xray_map_observation_type_units_cgs[observation_type], dtype=float)
+            
+            XRAY_VALUES[type_idx][part_mask]+=luminosities/ (luminosity_distance_no_z * ((1/particle_data["ExpansionFactors"][part_mask].value)**luminosity_distance_redshift_power))
+            XRAY_NAMES[type_idx]=[observation_type+"_"+observation_bands[0]]
+            
+        elif len(observation_bands) > 1:
+            XRAY_VALUES[type_idx] = unyt.unyt_array(
+                np.zeros((nparts, len(observation_bands))), 
+                units=xray_map_observation_type_units_cgs[observation_type], dtype=float)
+            for axis_idx in range(len(observation_bands)):
+                XRAY_VALUES[type_idx][part_mask, axis_idx] += luminosities[:, axis_idx] / (luminosity_distance_no_z * ((1/particle_data["ExpansionFactors"][part_mask].value)**luminosity_distance_redshift_power))
+            
+            XRAY_NAMES[type_idx]=[xray_map_names(band, observation_type) for band in observation_bands]
+        
+
+    return XRAY_VALUES, XRAY_NAMES
+
