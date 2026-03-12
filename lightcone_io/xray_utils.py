@@ -106,7 +106,7 @@ class Snapshot_Cosmology_For_Lightcone:
         
         return shell_volume
 
-# Filter out all particles that are not important for X-ray
+
 class Xray_Filter:
     def __init__(self, particle_data, numb_particles, remove_SF=True, log_T_min_K=5, remove_rhp=True, cosmo=None):
 
@@ -125,26 +125,32 @@ class Xray_Filter:
         else:
             raise ValueError("particle Temperatures not found ....")
 
-        if remove_rhp:
+        if remove_rhp and cosmo is not None:
             # check all the needed properties exist in particle data
             for prop_name in ["ExpansionFactors", "LastAGNFeedbackScaleFactors", "Temperatures", "Densities"]:
                 if prop_name not in particle_data:
                     ValueError("particle {required_property} not found ....".format(required_property=prop_name))
-            
-            # identify all recently heated particles and keep mask for future use
-            is_recently_heated = self.identify_recently_heated(
-                cosmo,
-                scalefactors=particle_data["ExpansionFactors"][self.KEEP_FOR_XRAY].value,
-                last_agn_feedback_scalefactors=particle_data["LastAGNFeedbackScaleFactors"][self.KEEP_FOR_XRAY].value,
-                temperatures=particle_data["Temperatures"][self.KEEP_FOR_XRAY], # keep units 
-                densities=particle_data["Densities"][self.KEEP_FOR_XRAY].to("g * cm**-3"), # convert the units
-                RHP_filter_max_time_Myr=70,  
-                RHP_filter_log_density_cm3=-2.25)
-            
-            self.numb_recently_heated = np.sum(is_recently_heated)
-            
-            # update mask 
-            self.KEEP_FOR_XRAY[is_recently_heated]=0
+
+            if cosmo is not None:
+
+
+                # identify all recently heated particles and keep mask for future use
+                is_recently_heated = self.identify_recently_heated(
+                    cosmo,
+                    scalefactors=particle_data["ExpansionFactors"][self.KEEP_FOR_XRAY].value,
+                    last_agn_feedback_scalefactors=particle_data["LastAGNFeedbackScaleFactors"][self.KEEP_FOR_XRAY].value,
+                    temperatures=particle_data["Temperatures"][self.KEEP_FOR_XRAY], # keep units 
+                    densities=particle_data["Densities"][self.KEEP_FOR_XRAY].to("g * cm**-3"), # convert the units
+                    RHP_filter_max_time_Myr=70,  
+                    RHP_filter_log_density_cm3=-2.25)
+
+                self.numb_recently_heated = np.sum(is_recently_heated)
+
+                # update mask 
+                self.KEEP_FOR_XRAY[self.KEEP_FOR_XRAY][is_recently_heated]=0
+        
+        else:
+            print("Need to provide cosmology information to filter recently heated particles")
             
 
 
@@ -192,7 +198,7 @@ class Xray_Filter:
         """
     
         # make output array of time differences  
-        dt = np.zero(len(scalefactors), dtype=float) -1.
+        dt = np.zeros(len(scalefactors), dtype=float) -1.
         dt[last_agn_feedback_scalefactors<0]=999 # cannot ever be recently heated
         dt[last_agn_feedback_scalefactors >= scalefactors] = handle_negatives # assume its due to compression
 
@@ -206,21 +212,20 @@ class Xray_Filter:
             particle_time_from_big_bang_Myr = f_z2t(z_part)
             last_heating_time_from_big_bang_Myr = f_z2t(z_last_agn_feedback)
             
-            dt[mask]=particle_time_from_big_bang_Myr.to_value("Myr")-AGN_heating_time_from_big_bang_Myr.to_value("Myr")
+            dt[mask]=particle_time_from_big_bang_Myr.to_value("Myr")-last_heating_time_from_big_bang_Myr.to_value("Myr")
             
         return dt
 
 
     def identify_recently_heated(
-            self, 
-            cosmo
-            scalefactors,
-            last_agn_feedback_scalefactors, 
-            temperatures, 
-            densities,
-            RHP_filter_max_time_Myr,
-            RHP_filter_log_density_cm3=-2.25
-        ):
+        self, 
+        cosmo,
+        scalefactors,
+        last_agn_feedback_scalefactors, 
+        temperatures, 
+        densities,
+        RHP_filter_max_time_Myr,
+        RHP_filter_log_density_cm3=-2.25):
         """
         Identify recently heated particles.
         Due to the BFloat16  lossy compression filter applied to 
@@ -286,7 +291,7 @@ class Xray_Filter:
         else:
             min_gas_density_cm3 = 10**RHP_filter_log_density_cm3
             # check minimum density requirent
-            is_above_min_density = (densities/unyt.mp).to_value('g*cm**-3') >= min_gas_density_cm3
+            is_above_min_density = (densities/unyt.mp).to_value('cm**-3') >= min_gas_density_cm3
         
         # combine masks and clean up
         combined_mask = is_in_temp_bounds & is_above_min_density & np.invert(never_heated)
