@@ -140,7 +140,7 @@ for fig_idx in range(2):
         xray_units=unyt.unit_object.Unit(Xray_flux[col_nr+fig_idx][:, j].units)
         xray_label_str=rf'$[{xray_units.latex_repr}]$'
         ax.set_xlabel(xray_label_str)
-        ax.set_title(observation_types[j+fig_idx], fontsize=9)
+        ax.set_title(xray_type, fontsize=9)
 
         ax.legend(
             loc='best',
