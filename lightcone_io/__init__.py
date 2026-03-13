@@ -1,4 +1,4 @@
-__all__ = ["ShellArray", "Shell", "HealpixMap", "ParticleLightcone", "IndexedLightconeParticleType", "HaloLightconeFile", "XrayCalculator_LC"]
+__all__ = ["ShellArray", "Shell", "HealpixMap", "ParticleLightcone", "IndexedLightconeParticleType", "HaloLightconeFile", "XrayCalculator_LC", "Snapshot_Cosmology_For_Lightcone", "Xray_Filter"]
 
 # Use setuptools_scm to get version from git tags
 from importlib.metadata import version, PackageNotFoundError
@@ -18,3 +18,6 @@ from .healpix_maps import Shell, ShellArray, HealpixMap
 from .halo_reader import HaloLightconeFile
 
 from .lc_xray_calculator import XrayCalculator_LC
+
+
+from .xray_utils import Snapshot_Cosmology_For_Lightcone, Xray_Filter
