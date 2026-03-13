@@ -43,8 +43,8 @@ input_filename = "{base_name}/particle_lightcones/lightcone{lc_nr}_particles/lig
 
 
 vector = (1.0, 0.0, 0.0)    # Vector pointing at a spot on the sky
-radius = np.deg2rad(0.5)  # Angular radius around that spot
-redshift_range = (0.001, 0.01) #redshift range to load
+radius = np.deg2rad(1.0)  # Angular radius around that spot
+redshift_range = (0., 0.02) #redshift range to load
 
 # Open the lightcone
 lightcone = pr.IndexedLightcone(input_filename)
@@ -140,7 +140,7 @@ for fig_idx in range(2):
         xray_units=unyt.unit_object.Unit(Xray_flux[col_nr+fig_idx][:, j].units)
         xray_label_str=rf'$[{xray_units.latex_repr}]$'
         ax.set_xlabel(xray_label_str)
-        ax.set_title(observation_types[j], fontsize=9)
+        ax.set_title(observation_types[j+fig_idx], fontsize=9)
 
         ax.legend(
             loc='best',
