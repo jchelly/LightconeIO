@@ -369,7 +369,9 @@ def get_observation_type_per_band(
     return observation_bands, all_observation_type_per_band
 
 
-def compute_luminosities(observation_bands, observation_types, particle_data, emissivity_table_filename, part_mask=None):
+def compute_luminosities(
+    observation_bands, observation_types, particle_data,
+     emissivity_table_filename, part_mask=None):
     """
     Compute X-ray luminosities in the given observation bands for each of the given observation types.
 
@@ -476,7 +478,9 @@ def compute_luminosities(observation_bands, observation_types, particle_data, em
     return XRAY_VALUES, XRAY_NAMES
 
 
-def particle_xray_values_for_map(observation_bands, observation_types, particle_data, emissivity_table_filename, part_mask=None):
+def particle_xray_values_for_map(
+    observation_bands, observation_types, particle_data, 
+    emissivity_table_filename, part_mask=None):
     """
     Compute X-ray values for all-sky in the given observation bands for each of the given observation types.
 
@@ -490,6 +494,7 @@ def particle_xray_values_for_map(observation_bands, observation_types, particle_
     Returns
         Nested List of X-ray values, Nested List of xray map names 
     """
+
     required_particle_properties = ["ExpansionFactors","Coordinates","Masses", "Densities", "SmoothedElementMassFractions","Temperatures", "StarFormationRates"]
     missing_properties = []
     for prop_name in required_particle_properties:
