@@ -124,11 +124,11 @@ for fig_idx in range(2):
     fig = plt.figure(figsize=(5, 2.5))
     plot_grid = fig.add_gridspec(nrows=1, ncols=numb_cols, width_ratios=np.ones(numb_cols, dtype=int), height_ratios=[1])
     axs=plot_grid.subplots(sharex='row', sharey='row')
-
+    
     for col_nr, xray_type in enumerate(figure_xray_values[fig_idx]):
         ax=axs[col_nr]
         for j, xray_band in enumerate(observation_bands):
-            n_pdf, __ =  np.histogram(Xray_flux[col_nr+fig_idx][:, j].value, bins=bin_edges, density=True)
+            n_pdf, __ =  np.histogram(Xray_flux[col_nr+(2*fig_idx)][:, j].value, bins=bin_edges, density=True)
 
             m = n_pdf>0
             ax.plot(midpoints[m], n_pdf[m], label=xray_band, color=f'C{9-j}', zorder=-200)
@@ -137,7 +137,7 @@ for fig_idx in range(2):
         ax.set_xscale("log")
         ax.set_yscale("log")
 
-        xray_units=unyt.unit_object.Unit(Xray_flux[col_nr+fig_idx][:, j].units)
+        xray_units=unyt.unit_object.Unit(Xray_flux[col_nr+(2*fig_idx)][:, j].units)
         xray_label_str=rf'$[{xray_units.latex_repr}]$'
         ax.set_xlabel(xray_label_str)
         ax.set_title(xray_type, fontsize=9)
@@ -157,4 +157,5 @@ for fig_idx in range(2):
     plt.savefig("./"+fig_name+".png",dpi=300, bbox_inches='tight')
 
     plt.close()
+
 
