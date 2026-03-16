@@ -8,15 +8,27 @@ from astropy.cosmology import w0waCDM
 
 # create cosmology object with snapshot information that is needed to filter the X-ray particles
 class Snapshot_Cosmology_For_Lightcone: 
-    def __init__(self, snapshot_root_dir):
+    def __init__(self, snapshot_root_dir, search_snapshot_pattern=None):
         """
         Make a cosmology object from the simuations snapshot cosmology metadata, create 
             functions used for common tasks with the lightcone and store information needed
-            for generating all-sky maps from the particle lightcones. 
+            for generating all-sky maps from the particle lightcones.
+
+        Requires FLAMINGO snapshots to be accessible and contain cosmology metadata. 
+
+        Params: 
+            snapshot_root_dir      : string with path to FLAMINGO snapshot directory or 
+                                    to snapshot .hdf5 file. 
+                                    i.e. "./path/to/flamingo/runs/LBoxsizeNresolution/SimName/snapshots"
+            search_snapshot_pattern: only required if FLAMINGO snapshot file naming conventions 
+                                    has been changed from 
+                                    "/snapshots/flamingo_4DigitInt/flamingo_4DigitInt.hdf5"
+        
+
         """
         
         # try access snapshot file
-        self.all_snapshot_filenames=self.get_snapshot_filename(snapshot_root_dir)
+        self.all_snapshot_filenames=self.get_snapshot_filename(snapshot_root_dir, search_snapshot_pattern)
 
         # to be consistent use the lowest redshift (highest number) snapshot. 
         snapshot_path = self.all_snapshot_filenames[-1] 
@@ -41,43 +53,67 @@ class Snapshot_Cosmology_For_Lightcone:
         # needed for filtering of recently heated gas particles
         self.AGN_delta_T_K = self.get_AGN_delta_T_K(snapshot_path)
     
-    def get_snapshot_filename(self, rootdir):
+    def get_snapshot_filename(self, rootdir, re_search_snapshot_pattern=None):
         """
         Relies on FLAMINGO snapshot virtual files to be named as: 
-            /snapshots/flamingo_4DigitInt/flamingo_4DigitInt.hdf5
+            "/snapshots/flamingo_4DigitInt/flamingo_4DigitInt.hdf5"
             
         Params:
             rootdir: path to directory with flamingo snapshots
                     "./path/to/flamingo/runs/LBoxsizeNresolution/SimName/snapshots"
+            re_search_snapshot_pattern: file naming pattern in regex terms. 
+
         Returns:
             path to lowest redshift snapshot file.
         """
         try:
-            regex = re.compile('(flamingo_00[0-9][0-9][.]hdf5$)')
+            if re_search_snapshot_pattern is None:
+                regex = re.compile('(flamingo_00[0-9][0-9][.]hdf5$)|(flamingo_[0-9][0-9][0-9][0-9].*hdf5$)')
+            else:
+                regex = re.compile(re_search_snapshot_pattern)
             filenames=[]
             for root, dirs, files in os.walk(rootdir):
                 for file in files:
                     if regex.match(file):
                         filenames.append( os.path.join(root, file))
             filenames.sort()
+            if len(filenames)==0:
+                raise FileNotFoundError("cannot find snapshot files from root directory")
             return filenames
-        except:
-            raise ValueError("cannot locate snapshot from root directory")
+        except FileNotFoundError as fnfe:
+            raise Exception("cannot find snapshot files from root directory") from fnfe
+        except ValueError as ve:
+            raise Exception("cannot locate the ") from ve
 
 
     def cosmology_from_hdf5(self, snapshot_path):
-        with h5py.File(snapshot_path, "r") as sn:
-            raw_cosmo = {}
-            for k,v in sn['Cosmology'].attrs.items():
-                raw_cosmo[f'{k}']=v
-        return raw_cosmo
+        try:
+            with h5py.File(snapshot_path, "r") as sn:
+                raw_cosmo = {}
+                for k,v in sn['Cosmology'].attrs.items():
+                    raw_cosmo[f'{k}']=v
+            return raw_cosmo
+        except FileNotFoundError as fnfe:
+            raise Exception("cannot access snapshot filename") from fnfe
+        except KeyError as ke:
+            raise Exception("Cosmology not found in snapshot .hdf5 file") from ke
+        except AttributeError as ae:
+            raise Exception("Cosmology attributes not found in snapshot .hdf5 file") from ae
+
     
     def get_internal_units(self, snapshot_path):
-        internal_units={}
-        with h5py.File(snapshot_path, "r") as sn:
-            for k, v in sn['InternalCodeUnits'].attrs.items():
-                internal_units[f'{k}'] = v
-        return internal_units
+        try:
+            internal_units={}
+            with h5py.File(snapshot_path, "r") as sn:
+                for k, v in sn['InternalCodeUnits'].attrs.items():
+                    internal_units[f'{k}'] = v
+            return internal_units
+        except FileNotFoundError as fnfe:
+            raise Exception("cannot access snapshot filename") from fnfe
+        except KeyError as ke:
+            raise Exception("InternalCodeUnits not found in snapshot .hdf5 file") from ke
+        except AttributeError as ae:
+            raise Exception("InternalCodeUnits attributes not found in snapshot .hdf5 file") from ae
 
 
     def z2Myr(self, z):
@@ -104,16 +140,16 @@ class Snapshot_Cosmology_For_Lightcone:
 
     def z2r(self, z):
         """
-        Returns the comoving radius for a given redshift.
+        Returns the comoving radius for a given redshift in cMpc
         """
         return unyt.unyt_array.from_astropy(self.COSMO.comoving_distance(z)).to("Mpc")
     
     def shell_comoving_raddii(self, redshift_filename):
         """
         Params:
-            redshift_filename: path to .txt file with redshift shell
+            redshift_filename: path to .txt file with shell redshift ranges
         Returns:
-            Array of comoving radii (inner, outer)
+            N x 2 array of comoving radii,  per shell returns [inner, outer]
         """
         try:
             self.shell_redshifts = np.loadtxt(redshift_filename, delimiter=",")
@@ -153,7 +189,7 @@ class Snapshot_Cosmology_For_Lightcone:
             use_redshift [boolean]: if False, then radii are in comoving distances. if True, then
                                     input radii are redshift values. 
             phi: 1/2 angle of the cones apature [radian]
-        Returns:
+        
         """
         if use_redshift: 
             # redshift -> comoving distance
