@@ -1,22 +1,33 @@
-
+import os
 import h5py
 import numpy as np
 import unyt
+import re
 from astropy.cosmology import w0waCDM
 
 
 # create cosmology object with snapshot information that is needed to filter the X-ray particles
 class Snapshot_Cosmology_For_Lightcone: 
-    def __init__(self, snapshot_path):
+    def __init__(self, snapshot_root_dir):
+
         """
         Make a cosmology object from the simuations snapshot cosmology data with useful functions
         for the particle lightcones.
-        
         """
+        
+        # try access snapshot file
+        self.all_snapshot_filenames=self.get_snapshot_filename(snapshot_root_dir)
+
+        # to be consistent use the lowest redshift (highest number) snapshot. 
+        snapshot_path = self.all_snapshot_filenames[-1] 
+        
+        # collect cosmology info from hdf5
         self.raw_cosmo = self.cosmology_from_hdf5(snapshot_path)
         
+        # collect internal units 
         self.internal_units = self.get_internal_units(snapshot_path)
 
+        # make cosmology object
         self.COSMO = w0waCDM(
             H0=unyt.unyt_quantity(self.raw_cosmo['H0 [internal units]'][0], units='km / Mpc / s').to("1/s").to_astropy(),
             Om0=self.raw_cosmo['Omega_m'][0],
@@ -26,8 +37,32 @@ class Snapshot_Cosmology_For_Lightcone:
             wa=self.raw_cosmo['w_a'][0],
             Tcmb0=unyt.unyt_quantity(self.raw_cosmo['T_CMB_0 [K]'][0], units=unyt.K),
         )
-
+        
+        # needed for filtering of recently heated gas particles
         self.AGN_delta_T_K = self.get_AGN_delta_T_K(snapshot_path)
+    
+    def get_snapshot_filename(self, rootdir):
+        """
+        Return path to lowest redshift snapshot file.
+        Relies on FLAMINGO snapshot virtual files to be named as: 
+            /snapshots/flamingo_numb/flamingo_numb.hdf5
+
+        Params:
+            rootdir: path to directory with flamingo snapshots
+
+        """
+        try:
+            regex = re.compile('(flamingo_00[0-9][0-9][.]hdf5$)')
+            filenames=[]
+            for root, dirs, files in os.walk(rootdir):
+                for file in files:
+                    if regex.match(file):
+                        filenames.append( os.path.join(root, file))
+            filenames.sort()
+            return filenames
+        except:
+            raise ValueError("cannot locate snapshot from root directory. ")
+
 
     def cosmology_from_hdf5(self, snapshot_path):
         with h5py.File(snapshot_path, "r") as sn:
@@ -36,9 +71,17 @@ class Snapshot_Cosmology_For_Lightcone:
                 raw_cosmo[f'{k}']=v
         return raw_cosmo
     
+    def get_internal_units(self, snapshot_path):
+        internal_units={}
+        with h5py.File(snapshot_path, "r") as sn:
+            for k, v in sn['InternalCodeUnits'].attrs.items():
+                internal_units[f'{k}'] = v
+        return internal_units
+
+
     def z2Myr(self, z):
         """
-        age of universe (time from big bang) to input redshift. 
+        Age of universe (time from big bang) to input redshift. 
         Returns a unyt_array [Myrs]
         """
         t_age=self.COSMO.age(z).to("Myr")
@@ -59,12 +102,31 @@ class Snapshot_Cosmology_For_Lightcone:
     
         return z_min.value
 
-    def get_internal_units(self, snapshot_path):
-        internal_units={}
-        with h5py.File(snapshot_path, "r") as sn:
-            for k, v in sn['InternalCodeUnits'].attrs.items():
-                internal_units[f'{k}'] = v
-        return internal_units
+    def z2r(self, z):
+        """
+        Returns the comoving radius for a given redshift.
+        """
+        return unyt.unyt_array.from_astropy(self.COSMO.comoving_distance(z)).to("Mpc")
+    
+    def shell_comoving_raddii(self, redshift_filename):
+        """
+        Params:
+            redshift_filename: path to .txt file with redshift shell
+        Returns 
+            Array of comoving radii (inner, outer)
+        """
+        try:
+            self.shell_redshifts = np.loadtxt(redshift_filename, delimiter=",")
+            zmin = self.shell_redshifts[:,0]
+            zmax = self.shell_redshifts[:,1]
+            comoving_radii = unyt.unyt_array(np.zeros((len(zmin), 2)), units="Mpc")
+            comoving_radii[:, 0]+=self.z2r(zmin)
+            comoving_radii[:, 1]+=self.z2r(zmax)
+        except:
+            raise ValueError("cannot access shell redshifts .txt file")
+        
+        return comoving_radii
+        
 
     def get_AGN_delta_T_K(self, snapshot_path):
         """
