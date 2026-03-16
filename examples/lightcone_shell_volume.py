@@ -30,7 +30,7 @@ plt.rcParams["legend.fontsize"]=9
 ###################################
 
 
-# for a given sim, find the comoving volume of a lightcone shell from 
+# for a given sim, find the comoving volume of a lightcone shell using 
 # the redshift values of the outer and inner edges of each shell,
 # then make a simple diagram. 
 
@@ -42,28 +42,14 @@ sim="L1000N1800/"+sim_name
 base_dir="/cosma8/data/dp004/flamingo/Runs/{sim}".format(sim="L1000N1800/"+sim_name)
 
 
-# create cosmology object for simulation using any of the snapshot files
+# create astropy cosmology object for simulation using any of the snapshot files
 snapshot_dir = "{base_name}/snapshots".format(base_name=base_dir)
-
 cosmo=Snapshot_Cosmology_For_Lightcone(snapshot_dir)
-print(cosmo.all_snapshot_filenames[-1])
 
 # get comoving radii for each shell 
 redshift_filename = "/cosma8/data/dp004/flamingo/Runs/{sim}/shell_redshifts_z3.txt".format(sim="L1000N1800/"+sim_name)
 r_shells = cosmo.shell_comoving_raddii(redshift_filename)
 z_shells = cosmo.shell_redshifts
-
-
-def draw_arc(radius, theta_degree, n=360):
-    #if theta_degree is None:
-    if theta_degree is not None:
-        theta_rad = (np.deg2rad(theta_degree[0]), np.deg2rad(theta_degree[1]))
-    elif theta_degree is None:
-        theta_rad = (0, 2*np.pi)
-    arc_rad = np.linspace(theta_rad[0], theta_rad[1], n)
-    a = radius * np.cos(arc_rad)
-    b = radius * np.sin(arc_rad)
-    return a, b
 
 # show a diagram for the first 10 shells
 from matplotlib.collections import PatchCollection
@@ -84,22 +70,16 @@ for shell_nr in range(n_shells):
         )
     )
     v_shell=cosmo.lightcone_volume(r_shells[shell_nr, 0], r_shells[shell_nr, -1], use_redshift=False)
-    print("\tComoving Volume: {v_shell:.3e}".format(v_shell=v_shell))
+    print("\tcomoving volume: {v_shell:.3e}".format(v_shell=v_shell))
     shell_volumes[shell_nr]=v_shell
 
-#circles = [plt.Circle((0, 0), r_shells[shell_nr, -1].to_value("Mpc"), fc=colours[int(shell_nr)+1], ec='black', zorder=-100-shell_nr) for shell_nr in range(n_shells)]
     axs.add_artist(plt.Circle((0, 0), r_shells[shell_nr, -1].to_value("Mpc"), fc=colours[int(shell_nr)+1], ec='black', zorder=-100-shell_nr))
 
 axs.scatter(0,0, fc='crimson', ec='black', marker='X', zorder=100, label='observer')
 
-#col = PatchCollection(circles)
-#col.set(array=shell_volumes, cmap='terrain_r')
-#axs.add_collection(col)
-
 cmap=mpl.colormaps['terrain_r']
-bounds = shell_volumes# np.linspace(0, 1, n_shells+1)
+bounds = shell_volumes
 print(bounds)
-#norm = mpl.colors.BoundaryNorm(bounds, cmap.N, extend='max')
 norm = mpl.colors.LogNorm(bounds[0],bounds[-1])
 fig.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
             orientation='vertical', shrink=1., ax=axs, extend="both",
