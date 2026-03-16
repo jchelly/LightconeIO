@@ -78,8 +78,8 @@ print("\nread {n_all} gas particles".format(n_all=nr_parts))
 
 # get cosmology information 
 # specify the snapshot to use the cosmology information from 
-snapshot_filename = "{base_name}/snapshots/flamingo_{snap_nr:04d}/flamingo_{snap_nr:04d}.hdf5".format(base_name=base_dir,  snap_nr=77)
-cosmo=Snapshot_Cosmology_For_Lightcone(snapshot_filename)
+snapshot_dir = "{base_name}/snapshots".format(base_name=base_dir)
+cosmo=Snapshot_Cosmology_For_Lightcone(snapshot_dir)
 particle_filter = Xray_Filter(particle_data, nr_parts, cosmo=cosmo)
 
 keep_particles = particle_filter.KEEP_FOR_XRAY
