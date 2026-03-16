@@ -9,10 +9,10 @@ from astropy.cosmology import w0waCDM
 # create cosmology object with snapshot information that is needed to filter the X-ray particles
 class Snapshot_Cosmology_For_Lightcone: 
     def __init__(self, snapshot_root_dir):
-
         """
-        Make a cosmology object from the simuations snapshot cosmology data with useful functions
-        for the particle lightcones.
+        Make a cosmology object from the simuations snapshot cosmology metadata, create 
+            functions used for common tasks with the lightcone and store information needed
+            for generating all-sky maps from the particle lightcones. 
         """
         
         # try access snapshot file
@@ -43,13 +43,14 @@ class Snapshot_Cosmology_For_Lightcone:
     
     def get_snapshot_filename(self, rootdir):
         """
-        Return path to lowest redshift snapshot file.
         Relies on FLAMINGO snapshot virtual files to be named as: 
-            /snapshots/flamingo_numb/flamingo_numb.hdf5
-
+            /snapshots/flamingo_4DigitInt/flamingo_4DigitInt.hdf5
+            
         Params:
             rootdir: path to directory with flamingo snapshots
-
+                    "./path/to/flamingo/runs/LBoxsizeNresolution/SimName/snapshots"
+        Returns:
+            path to lowest redshift snapshot file.
         """
         try:
             regex = re.compile('(flamingo_00[0-9][0-9][.]hdf5$)')
@@ -61,7 +62,7 @@ class Snapshot_Cosmology_For_Lightcone:
             filenames.sort()
             return filenames
         except:
-            raise ValueError("cannot locate snapshot from root directory. ")
+            raise ValueError("cannot locate snapshot from root directory")
 
 
     def cosmology_from_hdf5(self, snapshot_path):
@@ -81,19 +82,18 @@ class Snapshot_Cosmology_For_Lightcone:
 
     def z2Myr(self, z):
         """
-        Age of universe (time from big bang) to input redshift. 
-        Returns a unyt_array [Myrs]
+        Return a unyt_array [Myrs] with age of the universe at the input redshift(s). 
         """
         t_age=self.COSMO.age(z).to("Myr")
         return unyt.unyt_array.from_astropy(t_age)
     
     def redshift_with_time_offset(self, z, dt):
         """
-        params:
+        Params:
             z: redshift of observer
             dt: length of time [Myr]
 
-        returns 
+        Returns: 
             The redshift equal to the input redshift - length of time (dt)
         """
         time_from_bb = self.COSMO.age(z).to('Myr')
@@ -112,7 +112,7 @@ class Snapshot_Cosmology_For_Lightcone:
         """
         Params:
             redshift_filename: path to .txt file with redshift shell
-        Returns 
+        Returns:
             Array of comoving radii (inner, outer)
         """
         try:
@@ -130,7 +130,7 @@ class Snapshot_Cosmology_For_Lightcone:
 
     def get_AGN_delta_T_K(self, snapshot_path):
         """
-        return the Delta_T_AGN param required to identify recently heated particles
+        Return the Delta_T_AGN param required to identify recently heated particles
         """
         # 'AGN_delta_T_K' Change in temperature to apply to the gas particle in an AGN feedback event [K]
         with h5py.File(snapshot_path, "r") as sn:
@@ -148,20 +148,23 @@ class Snapshot_Cosmology_For_Lightcone:
         """
         Compute the comoving volume of the lightcone given some inner and outer radius
 
-        params: 
+        Params: 
             comoving_inner_radius, comoving_outer_radius: the radius of the lightcone in Mpc
             use_redshift [boolean]: if False, then radii are in comoving distances. if True, then
                                     input radii are redshift values. 
             phi: 1/2 angle of the cones apature [radian]
+        Returns:
         """
         if use_redshift: 
             # redshift -> comoving distance
-            comoving_inner_radius = self.COSMO.comoving_distance(comoving_inner_radius)
-            comoving_outer_radius = self.COSMO.comoving_distance(comoving_outer_radius)
+            comoving_inner_radius = unyt.unyt_array.from_astropy(self.COSMO.comoving_distance(comoving_inner_radius))
+            comoving_outer_radius = unyt.unyt_array.from_astropy(self.COSMO.comoving_distance(comoving_outer_radius))
         
         if phi is None:
+            # spherical shells
             shell_volume = (4/3)*np.pi * (comoving_outer_radius**3 - comoving_inner_radius**3)
         else:
+            # cone shells 
             r_outer=comoving_outer_radius*(1-np.cos(phi))
             r_inner=comoving_inner_radius*(1-np.cos(phi))
             shell_volume = (2/3)*np.pi * ((comoving_outer_radius**2 * r_outer) - (comoving_outer_radius**2 * r_outer))
