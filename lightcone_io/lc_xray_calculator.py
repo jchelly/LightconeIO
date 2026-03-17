@@ -461,7 +461,7 @@ def compute_luminosities(
                 units=xray_calc.observation_type_luminosities_cgs_units[observation_type], dtype=float)
             
             XRAY_VALUES[type_idx][part_mask]+=luminosities
-            XRAY_NAMES[type_idx]=[band+"_"+observation_type]
+            XRAY_NAMES[type_idx]=[observation_bands[0]+"_"+observation_type]
             
         elif len(observation_bands) > 1:
             XRAY_VALUES[type_idx] = unyt.unyt_array(
@@ -598,7 +598,7 @@ def particle_xray_values_for_map(
                 units=xray_map_observation_type_units_cgs[observation_type], dtype=float)
             
             XRAY_VALUES[type_idx][part_mask]+=luminosities/ (luminosity_distance_no_z * ((1/particle_data["ExpansionFactors"][part_mask].value)**luminosity_distance_redshift_power))
-            XRAY_NAMES[type_idx]=[observation_type+"_"+observation_bands[0]]
+            XRAY_NAMES[type_idx]=[observation_bands[0]+"_"+observation_type]
             
         elif len(observation_bands) > 1:
             XRAY_VALUES[type_idx] = unyt.unyt_array(
