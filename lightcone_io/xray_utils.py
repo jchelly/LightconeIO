@@ -3,8 +3,7 @@ import h5py
 import numpy as np
 import unyt
 import re
-from astropy.cosmology import w0waCDM
-
+from astropy.cosmology import w0waCDM, z_at_value
 
 # create cosmology object with snapshot information that is needed to filter the X-ray particles
 class Snapshot_Cosmology_For_Lightcone: 
