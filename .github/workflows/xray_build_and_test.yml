@@ -4,7 +4,7 @@
 # Repeats tests on local and remote files by running an instance of the
 # hdfstream server in a container.
 #
-name: Build and test
+name: Xray branch only build and test
 
 on:
   push:
