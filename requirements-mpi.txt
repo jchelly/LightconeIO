@@ -7,5 +7,3 @@ virgodc
 scipy
 tqdm
 numba
-re
-astropy
