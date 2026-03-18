@@ -5,5 +5,4 @@ healpy
 scipy
 tqdm
 numba
-re
 astropy
