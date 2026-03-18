@@ -5,7 +5,7 @@
 #SBATCH -o ./logs/L1000N0900/process_maps_%x.%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp203
-#SBATCH -t 71:00:00
+#SBATCH -t 43:00:00
 #
 
 module purge
@@ -29,7 +29,7 @@ output_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/combined_maps/
 
 # Output is a single large file per map, so stripe
 \mkdir -p ${output_dir}
-lfs setstripe --stripe-count=8 --stripe-size=32M ${output_dir}
+lfs setstripe --stripe-count=4 --stripe-size=32M ${output_dir}
 
 mpirun -- python3 -m mpi4py -m lightcone_io.combine_maps \
     ${input_dir} ${output_dir} ${basename}
@@ -40,10 +40,10 @@ mpirun -- python3 -m mpi4py -m lightcone_io.combine_maps \
 
 sim_dir=/cosma8/data/dp004/flamingo/Runs/${sim}/
 input_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/combined_maps/
-output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/neutrino_corrected_maps/
+output_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/neutrino_corrected_maps/
 
 \mkdir -p ${output_dir}
-lfs setstripe --stripe-count=8 --stripe-size=32M ${output_dir}
+lfs setstripe --stripe-count=4 --stripe-size=32M ${output_dir}
 
 # Find simulation config file
 if [[ "$sim" == "L1000N0900/DMO_FIDUCIAL" ]]; then
@@ -65,12 +65,12 @@ mpirun -- python3 -m mpi4py -m lightcone_io.correct_maps \
 # Downsample. Uses a lot of memory per process, so limit processes.
 #
 new_nside=4096
-input_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/neutrino_corrected_maps/
-output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/neutrino_corrected_maps_downsampled_${new_nside}/
+input_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/neutrino_corrected_maps/
+output_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/neutrino_corrected_maps_downsampled_${new_nside}/
 
 # Output is a single large file per map, so stripe
 \mkdir -p ${output_dir}
-lfs setstripe --stripe-count=8 --stripe-size=32M ${output_dir}
+lfs setstripe --stripe-count=4 --stripe-size=32M ${output_dir}
 
 mpirun -np 4 -- python3 -m mpi4py -m lightcone_io.downsample_maps \
        ${input_dir} ${output_dir} ${basename} ${new_nside}

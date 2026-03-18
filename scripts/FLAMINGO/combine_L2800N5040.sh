@@ -2,7 +2,8 @@
 #
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=1
-#SBATCH -o ./logs/L1000N1800/combine_maps_%x.%a.out
+#SBATCH --tasks=128
+#SBATCH -o ./logs/L2800N5040/combine_maps_%x.%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
 #SBATCH -t 11:20:00
@@ -16,16 +17,16 @@ export HDF5_USE_FILE_LOCKING=FALSE
 # Activate virtual env with lightcone_io installed
 source /cosma/apps/dp004/${USER}/lightcone_env/bin/activate
 
-sim="L1000N1800/${SLURM_JOB_NAME}"
+sim="L2800N5040/${SLURM_JOB_NAME}"
 lightcone_nr=${SLURM_ARRAY_TASK_ID}
 basename=lightcone${lightcone_nr}
 
 input_dir=/cosma8/data/dp004/flamingo/Runs/${sim}/lightcones-do-not-use/
-output_dir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/${sim}/combined_maps/
+output_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/combined_maps/
 
 # Output is a single large file per map, so stripe
 \mkdir -p ${output_dir}
-lfs setstripe --stripe-count=8 --stripe-size=32M ${output_dir}
+lfs setstripe --stripe-count=4 --stripe-size=32M ${output_dir}
 
 mpirun -- python3 -m mpi4py -m lightcone_io.combine_maps \
     ${input_dir} ${output_dir} ${basename}
