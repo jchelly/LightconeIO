@@ -150,7 +150,7 @@ if __name__ == "__main__":
     # if it does exist then remove maps with the same name. 
     if comm_rank==0:
         print(output_filename, flush=True)
-        new_map_names = [xray_map_names(band, observation_type) for band in ['erosita-high', 'erosita-low','ROSAT']]
+        new_map_names = [Xmap.xray_map_names(band, observation_type) for band in ['erosita-high', 'erosita-low','ROSAT']]
         xray_table_filename=Xcalc.COMBINED_XRAY_EMISSIVITY_TABLE_FILENAME
         __ = Xmap.write_and_restart_output_shell(output_filename, new_map_names, xray_table_filename, input_filename)
 
