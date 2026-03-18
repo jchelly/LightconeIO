@@ -1,12 +1,11 @@
 #!/bin/bash -l
 #
-#SBATCH --nodes=20
-#SBATCH --tasks-per-node=64
-#SBATCH --cpus-per-task=1
+#SBATCH --nodes=16
+#SBATCH --cpus-per-task=8
 #SBATCH -o ./logs/L1000N3600/index_%x.bh_only.lightcone%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
-#SBATCH -t 12:00:00
+#SBATCH -t 22:00:00
 #SBATCH --no-requeue
 #
 
@@ -26,7 +25,7 @@ name=${SLURM_JOB_NAME}
 lightcone_nr=${SLURM_ARRAY_TASK_ID}
 
 # Input lightcone
-basedir=/cosma8/data/dp004/flamingo/Runs/L1000N3600/${name}/lightcones/
+basedir=/cosma8/data/dp004/flamingo/Runs/L1000N3600/${name}/lightcones-do-not-use/
 basename=lightcone${lightcone_nr}
 
 # Number of redshift bins
@@ -41,7 +40,7 @@ lossy=1
 chunksize=1048576
 
 # Output directory
-outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N3600/${name}/bh_particle_lightcones/
+outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N3600/${name}/particle_lightcones/
 \mkdir -p ${outdir}
 lfs setstripe --stripe-count=4 --stripe-size=32M ${outdir}
 

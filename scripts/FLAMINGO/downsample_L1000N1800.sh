@@ -5,7 +5,7 @@
 #SBATCH -o ./logs/L1000N1800/downsample4096_%x.lightcone%a.out
 #SBATCH -p cosma8
 #SBATCH -A dp004
-#SBATCH -t 48:00:00
+#SBATCH -t 11:20:00
 #
 
 module purge
@@ -22,12 +22,12 @@ sim="L1000N1800/${SLURM_JOB_NAME}"
 lightcone_nr=${SLURM_ARRAY_TASK_ID}
 basename=lightcone${lightcone_nr}
 
-input_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/neutrino_corrected_maps/
-output_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/neutrino_corrected_maps_downsampled_${new_nside}/
+input_dir=/cosma8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/neutrino_corrected_maps/
+output_dir=/cosma8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/neutrino_corrected_maps_downsampled_${new_nside}/
 
 # Output is a single large file per map, so stripe
 \mkdir -p ${output_dir}
-lfs setstripe --stripe-count=-1 --stripe-size=32M ${output_dir}
+lfs setstripe --stripe-count=8 --stripe-size=32M ${output_dir}
 
 mpirun -- python3 -m mpi4py -m lightcone_io.downsample_maps \
        ${input_dir} ${output_dir} ${basename} ${new_nside}

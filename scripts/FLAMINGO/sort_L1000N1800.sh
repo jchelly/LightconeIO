@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH -o ./logs/L1000N1800/index_%x.lightcone%a.out
 #SBATCH -p cosma8
-#SBATCH -A dp004
+#SBATCH -A dp203
 #SBATCH -t 48:00:00
 #
 
@@ -40,11 +40,12 @@ lossy=1
 chunksize=1048576
 
 # Output directory
-outdir=/cosma8/data/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/${name}/particle_lightcones/
+outdir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/L1000N1800/${name}/particle_lightcones/
 \mkdir -p ${outdir}
 lfs setstripe --stripe-count=4 --stripe-size=32M ${outdir}
 
 # Run the code
 mpirun -- python3 -u -m mpi4py -m lightcone_io.index_particles \
        ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${outdir} \
-       --order ${order} --redshift-first --lossy --chunksize=${chunksize}
+       --order ${order} --redshift-first --lossy --chunksize=${chunksize} \
+       --types="BH,Gas" --skip-missing

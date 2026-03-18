@@ -4,7 +4,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH -o ./logs/L1000N1800/process_maps_%x.%a.out
 #SBATCH -p cosma8
-#SBATCH -A dp004
+#SBATCH -A dp203
 #SBATCH -t 71:00:00
 #
 
@@ -23,8 +23,11 @@ basename=lightcone${lightcone_nr}
 #
 # Combine original outputs to single files
 #
-
 input_dir=/cosma8/data/dp004/flamingo/Runs/${sim}/lightcones-do-not-use/
+if [ ! -e ${input_dir} ] ; then
+  input_dir=/cosma8/data/dp004/flamingo/Runs/${sim}/lightcones/
+fi
+
 output_dir=/snap8/scratch/dp004/jch/FLAMINGO/ScienceRuns/${sim}/combined_maps/
 
 # Output is a single large file per map, so stripe
