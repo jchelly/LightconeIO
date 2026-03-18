@@ -17,7 +17,8 @@ from .healpix_maps import Shell, ShellArray, HealpixMap
 # Classes for reading halo lightcones
 from .halo_reader import HaloLightconeFile
 
+# Classes for computing X-ray values
 from .lc_xray_calculator import XrayCalculator_LC
 
-
+# Classes for using cosmology objects and filtering particles for X-rays
 from .xray_utils import Snapshot_Cosmology_For_Lightcone, Xray_Filter
