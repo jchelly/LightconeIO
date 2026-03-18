@@ -420,12 +420,6 @@ def compute_luminosities(
         fill_value = 0
     )
 
-    #clean up where possible
-    del particle_data["SmoothedElementMassFractions"] 
-    del particle_data["Temperatures"]
-    del particle_data["Densities"]
-    del particle_data["Masses"]
-
     # make empty nested list for each observation type 
     xray_luminosities_units_cgs=xray_calc.observation_type_luminosities_cgs_units
 
@@ -552,12 +546,6 @@ def particle_xray_values_for_map(
         fill_value = 0
     )
 
-    #clean up where possible
-    del particle_data["SmoothedElementMassFractions"] 
-    del particle_data["Temperatures"]
-    del particle_data["Densities"]
-    del particle_data["Masses"]
-    del particle_data["Coordinates"]
 
     XRAY_VALUES = [ [] for i in range(len(observation_types))]
     XRAY_NAMES = [ [] for i in range(len(observation_types))]
