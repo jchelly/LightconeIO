@@ -8,9 +8,9 @@ name: Xray branch only build and test
 
 on:
   push:
-    branches: [ "master","lc_xrays" ]
+    branches: [ "lc_xrays" ]
   pull_request:
-    branches: [ "master","lc_xrays" ]
+    branches: [ "lc_xrays" ]
 
 permissions:
   contents: read
