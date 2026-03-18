@@ -4,6 +4,7 @@ import sys
 import os
 import numpy as np
 import h5py
+import argparse
 #lightcone_io 
 import lightcone_io.lc_xray_calculator as Xcalc
 from lightcone_io.xray_utils import Snapshot_Cosmology_For_Lightcone
