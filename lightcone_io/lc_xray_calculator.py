@@ -1,3 +1,4 @@
+#!/bin/env python
 import sys
 import h5py
 import numpy as np
