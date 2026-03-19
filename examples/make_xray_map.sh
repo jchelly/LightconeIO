@@ -1,14 +1,22 @@
 #!/bin/bash -l
 #SBATCH --array=5 # shell number
 #SBATCH --nodes=1
-#SBATCH --tasks-per-node=32
+#SBATCH --tasks-per-node=64
 #SBATCH --cpus-per-task=1
 #SBATCH -J HYDRO_FIDUCIAL
 #SBATCH -o ./logs/smoothed_xray_map.%x.%a.out              
 #SBATCH -e ./logs/smoothed_xray_map.%x.%a.err
 #SBATCH -p cosma8
-#SBATCH -A dp203
+#SBATCH -A dp004
 #SBATCH -t 03:00:00
+
+
+
+# NOTE this example is parallelised with MPI. It requires
+# h5py to be configured for use with MPI in parallel
+# and the use of the VirgoDC repository
+# To build the required virtual environment: 
+# scripts/virtual_env/make_cosma_env_python3.12.4.sh
 
 
 module purge
