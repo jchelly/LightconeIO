@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #SBATCH --array=5 # shell number
-#SBATCH --nodes=2
-#SBATCH --tasks-per-node=32
+#SBATCH --nodes=4
+#SBATCH --tasks-per-node=16
 #SBATCH --cpus-per-task=1
 #SBATCH -J HYDRO_FIDUCIAL
 #SBATCH -o ./logs/smoothed_xray_map.%x.%a.out              
