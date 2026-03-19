@@ -171,8 +171,6 @@ def get_map_attributes(nside, units):
     attrs["U_T exponent"] = [float(powers[unyt.dimensions.temperature])]
     attrs["U_t exponent"] = [float(powers[unyt.dimensions.time])]
     attrs["h-scale exponent"] = [float(h_exponent)]
-    # Note that "a-scale exponent" is set even if the output is physical,
-    # or if the quantity can't be converted to comoving
     attrs["a-scale exponent"] = [0.0 if a_exponent is None else a_exponent]
     attrs["Value stored as physical"] = [1 if physical else 0]
     attrs["Property can be converted to comoving"] = [0 if a_exponent is None else 1]
@@ -412,7 +410,7 @@ def write_smoothed_xray_map_in_all_bands(
     part_hsml_recv=part_hsml_recv[single_pixel==False]
     
     ####################################################################################################
-    # create x-ray interpretor objects and compute luminosity distances
+    # Compute X-ray values in all bands. 
 
     # get arrays of all combinations of observation bands and types     
     all_observation_bands_per_type, all_observation_types_per_band = Xcalc.get_observation_type_per_band(
@@ -598,15 +596,7 @@ def write_smoothed_xray_map_in_all_bands(
         comm.barrier() # gather at barrier to then give sanity check update
 
         ####################################################################################################
-        # Write maps
-
-        # track how long it takes to perform the sanity check 
-        if comm_rank==0:
-            sanity_check_time_0=datetime.datetime.now()
-        else:
-            sanity_check_time_0=None 
-
-        # give rank by rank message on the number of pixels updated
+        # Sanity chcek & Write maps to output .hdf5 file
 
         # Sanity check:
         # Sum over the map should equal sum of values to be accumulated to the map.
@@ -624,14 +614,8 @@ def write_smoothed_xray_map_in_all_bands(
         ratio_total_str="\ntotals ratio (map/particles):\n\teROSITA-high: {total0:.5f}\n\teROSITA-low: {total1:.5f}\n\tROSAT: {total2:.5f}\n"
         message(ratio_total_str.format(total0=map_sum_eROSITA_high/val_total_global_eROSITA_high, total1=map_sum_eROSITA_low/val_total_global_eROSITA_low, total2=map_sum_ROSAT/val_total_global_ROSAT))
 
-        if comm_rank==0:
-            sanity_check_time_1=datetime.datetime.now()
-            dt_str = str(sanity_check_time_1-sanity_check_time_0)
-            rank_message("time spent computing map totals = "+dt_str, comm_rank)
-
-            del sanity_check_time_0
-            del sanity_check_time_1
-
+        # message ensures all ranks are gathered after making sanity checks so map writing can start. 
+        
         # can now delete all additional total values 
         del map_sum_eROSITA_high
         del map_sum_eROSITA_low
@@ -641,57 +625,54 @@ def write_smoothed_xray_map_in_all_bands(
         del val_total_global_eROSITA_low
         del val_total_global_ROSAT
 
-
-        comm.barrier()
-    
-        ### add maps for each band into hdf5 file as datasets
-
+        
         if comm_rank==0:
+            # start tracking the time spent on writing the maps to .hdf5 file
             writing_time_0=datetime.datetime.now()
 
+        # write maps to .hdf5 file
+        # messages enforce comm.barrier() between writing outputs. 
+        
         # eROSITA-high
         dataset_name=Xcalc.xray_map_names('erosita-high', observation_type)
-        message(f"\nWriting dataset ({dataset_name}) to file: {output_filename}")
+        message(f"\nwriting dataset ({dataset_name}) to file:\n {output_filename}")
         with h5py.File(output_filename, "a", driver="mpio", comm=comm) as outfile:
             phdf5.collective_write(outfile, dataset_name, map_data_eROSITA_high, comm)
-        
         message(f"\tcompleted writing {dataset_name}")
         del map_data_eROSITA_high
         del map_view_eROSITA_high
 
         # eROSITA-low
         dataset_name=Xcalc.xray_map_names('erosita-low', observation_type)
-        message(f"Writing dataset ({dataset_name}) to file: {output_filename}")
+        message(f"writing dataset ({dataset_name}) to file:\n {output_filename}")
         with h5py.File(output_filename, "a", driver="mpio", comm=comm) as outfile:
             phdf5.collective_write(outfile, dataset_name, map_data_eROSITA_low, comm)
-
         message(f"\tcompleted writing {dataset_name}")
         del map_data_eROSITA_low
         del map_view_eROSITA_low
 
         # ROSAT
         dataset_name=Xcalc.xray_map_names('ROSAT', observation_type)
-        message(f"Writing dataset ({dataset_name}) to file: {output_filename}")
+        message(f"writing dataset ({dataset_name}) to file:\n {output_filename}")
         with h5py.File(output_filename, "a", driver="mpio", comm=comm) as outfile:
             phdf5.collective_write(outfile, dataset_name, map_data_ROSAT, comm)
-
         message(f"\tcompleted writing datasets {dataset_name}")
         del map_data_ROSAT
         del map_view_ROSAT
         
-        # define the map attrs and add to all existing maps
+        # define the map dataset attributes and add to each bands output maps. 
         if comm_rank==0:
-            map_attrs=get_map_attributes(nside, map_units)
+            map_attrs=get_map_attributes(nside, map_units) # compute atttrs
             with h5py.File(output_filename, "a") as outfile:
                 for band in ['erosita-high', 'erosita-low','ROSAT']: 
-                    #load map dataset object
+                    # load map dataset object
                     dataset_name = Xcalc.xray_map_names(band, observation_type)
                     Xray_map=outfile[dataset_name]
                     # write attrs for a given map
                     for k, v in map_attrs.items():
                         Xray_map.attrs[k]=v
         
-            #give time update on map writing
+            # give update on time spent writing outputs
             writing_time_1=datetime.datetime.now()
             dt_writing_str=str(writing_time_1-writing_time_0)
             rank_message("Writing maps end time: "+str(writing_time_1)+"\nTime Spent Writing: "+dt_writing_str, comm_rank)
