@@ -7,7 +7,6 @@ import h5py
 import argparse
 #lightcone_io 
 import lightcone_io.lc_xray_calculator as Xcalc
-from lightcone_io.xray_utils import Snapshot_Cosmology_For_Lightcone
 from lightcone_io.smoothed_map import message, rank_message
 import lightcone_io.xray_map_all_bands as Xmap
 #mpi
