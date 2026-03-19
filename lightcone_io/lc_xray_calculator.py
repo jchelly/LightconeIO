@@ -81,7 +81,7 @@ class XrayCalculator_LC:
                 assert isinstance(table, dict) # confirm that the table is a dictionary
                 assert "Bins" in table # confirm the table has redshift bins
             except:
-                raise ValueError("You must pass a working dictionary with the x-ray table values") from e
+                raise ValueError("You must pass a working dictionary with the x-ray table values")
             
             # table has been passed in a dictionary and doesn't need to be read as h5file. 
             self.redshift_bins = table['Bins']['Redshift_bins'].astype(np.float32)
