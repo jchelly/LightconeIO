@@ -10,19 +10,11 @@ import lightcone_io.lc_xray_calculator as Xcalc
 from lightcone_io.xray_utils import Snapshot_Cosmology_For_Lightcone
 from lightcone_io.smoothed_map import message, rank_message
 import lightcone_io.xray_map_all_bands as Xmap
-#virgo dc
-import virgo.mpi.parallel_hdf5 as phdf5
 #mpi
 from mpi4py import MPI
 comm = MPI.COMM_WORLD
 comm_rank = comm.Get_rank()
 
-
-def get_cosmology_object(snapshot_root_dir):
-    """
-    Return the cosmology object 
-    """
-    return Snapshot_Cosmology_For_Lightcone(snapshot_root_dir)
 
 
 def L1000N1800_Xray_Map_All_Bands(shell_nr, xray_type, output_filename, input_filename, snapshot_base_dir, nside):
@@ -61,13 +53,13 @@ def L1000N1800_Xray_Map_All_Bands(shell_nr, xray_type, output_filename, input_fi
         redshifts = np.loadtxt(shell_redshifts, delimiter=",")
         zmin = redshifts[shell_nr,0]
         zmax = redshifts[shell_nr,1]
-        print(f"Reproducing shell {shell_nr} with zmin={zmin} and zmax={zmax}, at Nside {nside}\n", flush=True)
+        print("Reproducing shell {shell_nr:d} with zmin={zmin:>4f} and zmax={zmax:.4f}, at Nside {nside}\n".format(shell_nr=shell_nr, zmin=zmin, zmax=zmax, nside=nside), flush=True)
+        del redshifts # no longer needed once we have the shells edges. 
         
         # construct snapshot cosmology object 
-        cosmo = get_cosmology_object(snapshot_base_dir)
+        cosmo = Xmap.get_cosmology_object(snapshot_base_dir)
         
         # pre-load X-ray tables in all bands
-        print(f"reading table")
         table_dict = Xmap.get_xray_table(['erosita-high', 'erosita-low', 'ROSAT'], xray_table_filename)
         
     else:
@@ -79,7 +71,10 @@ def L1000N1800_Xray_Map_All_Bands(shell_nr, xray_type, output_filename, input_fi
     zmin, zmax = comm.bcast((zmin, zmax))
     cosmo=comm.bcast(cosmo)
     table_dict=comm.bcast(table_dict)
-
+    
+    # clean up used params 
+    del snapshot_base_dir, shell_redshifts, xray_table_filename
+    
     # Specify the gas particle properties to read in
     property_names = (
         "Coordinates",
@@ -97,9 +92,10 @@ def L1000N1800_Xray_Map_All_Bands(shell_nr, xray_type, output_filename, input_fi
         cosmo=cosmo, xray_tables=table_dict, 
         output_filename=output_filename, 
         xray_type=xray_type,
-        vector = None, 
-        radius = None, 
-        theta=0., phi=0.) 
+        vector = None, # no point of a beam
+        radius = None, # full sky. 
+        theta=0., phi=0. # no rotation of the shell. 
+    ) 
 
 
 if __name__ == "__main__":
@@ -113,9 +109,11 @@ if __name__ == "__main__":
         argparser.add_argument("--output_dir", type=str, help="directory of the output maps")
         argparser.add_argument("--xray_type", type=str, help="the X-ray observation type")
         params = argparser.parse_args()
-        
+
+        # store shell number, map nside and x-ray observation type
         shell_nr = params.shell_nr
-        print(f"\nshell_nr: {shell_nr}", flush=True)
+        nside =params.nside
+        xray_type=params.xray_type
 
         # input particle lightcone example filename 
         input_filename='{sim_dir}/particle_lightcones/lightcone{lc_nr}_particles/lightcone{lc_nr}_0000.0.hdf5'.format(sim_dir=params.simulation_dir, lc_nr=params.lightcone_nr)
@@ -127,8 +125,7 @@ if __name__ == "__main__":
         # create empty output file with basic attributes
         output_filename = "{output_dir}/lightcone{lc_nr}.shell_{shell_nr}.hdf5".format(output_dir=params.output_dir, lc_nr=params.lightcone_nr, shell_nr=params.shell_nr)
 
-        nside =params.nside
-        xray_type=params.xray_type
+        del params # no longer needed
 
     else:
         shell_nr=None
@@ -149,8 +146,7 @@ if __name__ == "__main__":
     # make output .hdf5 file of the shell if it does not already exist.
     # if it does exist then remove maps with the same name. 
     if comm_rank==0:
-        print(output_filename, flush=True)
-        new_map_names = [Xmap.xray_map_names(band, xray_type) for band in ['erosita-high', 'erosita-low','ROSAT']]
+        new_map_names = [Xcalc.xray_map_names(band, xray_type) for band in ['erosita-high', 'erosita-low','ROSAT']]
         xray_table_filename=Xcalc.COMBINED_XRAY_EMISSIVITY_TABLE_FILENAME
         __ = Xmap.write_and_restart_output_shell(output_filename, new_map_names, xray_table_filename, input_filename)
 
