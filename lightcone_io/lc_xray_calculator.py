@@ -9,7 +9,13 @@ from unyt import g, cm, mp, erg, s, photons
 #
 COMBINED_XRAY_EMISSIVITY_TABLE_FILENAME = "/cosma8/data/dp004/flamingo/Tables/Xray/X_Ray_table_combined.hdf5"
 
-# The SOAP xray calculator modifed to hanlde multiple redshifts at once
+xray_map_observation_type_units_cgs={ 
+        'photons_intrinsic':unyt.photons * unyt.cm**-2 * unyt.s**-1,
+        'energies_intrinsic':unyt.erg * unyt.cm**-2 * unyt.s**-1,
+        'photons_convolved':unyt.photons * unyt.s**-1,
+        'energies_convolved':unyt.erg * unyt.s**-1,
+        }
+
 
 class XrayCalculator_LC:
     def __init__(self, redshifts, table, bands, observing_types):
@@ -40,7 +46,6 @@ class XrayCalculator_LC:
         
         self.tables = self.load_all_tables(redshifts, table, bands, observing_types)
         
-
         self.observation_type_luminosities_cgs_units={
             'photons_intrinsic':photons * s**-1,    
             'energies_intrinsic':erg * s**-1,    
@@ -59,7 +64,6 @@ class XrayCalculator_LC:
                 del bands[i]
         return observing_types, bands
 
-        
 
     def load_all_tables(self, redshifts, table, bands, observing_types):
         '''
@@ -72,32 +76,58 @@ class XrayCalculator_LC:
         '''
 
         # given a table path, attempt to read the table:
-        try:
-            table = h5py.File(table, "r")
-        except ValueError as e:
-            raise Exception("You must pass a working x-ray table path") from e
+        if isinstance(table, str)==False:
+            try: 
+                assert isinstance(table, dict) # confirm that the table is a dictionary
+                assert "Bins" in table # confirm the table has redshift bins
+            except:
+                raise ValueError("You must pass a working dictionary with the x-ray table values") from e
+            
+            # table has been passed in a dictionary and doesn't need to be read as h5file. 
+            self.redshift_bins = table['Bins']['Redshift_bins'].astype(np.float32)
+            idx_z, _= self.get_index_1d(self.redshift_bins, redshifts)
+            ############ make it always load min redshift index value. 
+            #min_idx_z = np.min(idx_z)
+            min_idx_z = 0
+            ############
+            max_idx_z = np.max(idx_z) + 2
 
+            self.He_bins = table['Bins']['He_bins'].astype(np.float32)
+            self.missing_elements = table['Bins']['Missing_element']
+            self.element_masses = table['Bins']['Element_masses'].astype(np.float32)
 
-        self.redshift_bins = table['/Bins/Redshift_bins'][()].astype(np.float32)
-        idx_z, _= self.get_index_1d(self.redshift_bins, redshifts)
-        ############ make it always load min redshift index value. 
-        #min_idx_z = np.min(idx_z)
-        min_idx_z = 0
-        ############
-        max_idx_z = np.max(idx_z) + 2
+            self.density_bins = table['Bins']['Density_bins'].astype(np.float32)
+            self.temperature_bins = table['Bins']['Temperature_bins'].astype(np.float32)
+            self.redshift_bins = table['Bins']['Redshift_bins'].astype(np.float32)
 
-        self.He_bins = table['/Bins/He_bins'][()].astype(np.float32)
-        self.missing_elements = table['/Bins/Missing_element'][()]
-        self.element_masses = table['Bins/Element_masses'][()].astype(np.float32)
+            self.log10_solar_metallicity = table['Bins']['Solar_metallicities'].astype(np.float32)
+            self.solar_metallicity = np.power(10, self.log10_solar_metallicity)
+        
+        elif isinstance(table, str):
+            # table is not a dictionary, therefore try read it as hdf5 file. 
+            try:
+                table = h5py.File(table, "r")
+            except ValueError as e:
+                raise Exception("You must pass a working x-ray table path") from e
 
-        self.density_bins = table['/Bins/Density_bins/'][()].astype(np.float32)
-        self.temperature_bins = table['/Bins/Temperature_bins/'][()].astype(np.float32)
-        self.redshift_bins = table['/Bins/Redshift_bins'][()].astype(np.float32)
+            self.redshift_bins = table['/Bins/Redshift_bins'][()].astype(np.float32)
+            idx_z, _= self.get_index_1d(self.redshift_bins, redshifts)
+            ############ make it always load min redshift index value. 
+            #min_idx_z = np.min(idx_z)
+            min_idx_z = 0
+            ############
+            max_idx_z = np.max(idx_z) + 2
 
-        self.log10_solar_metallicity = table['/Bins/Solar_metallicities/'][()].astype(np.float32)
-        self.solar_metallicity = np.power(10, self.log10_solar_metallicity)
+            self.He_bins = table['/Bins/He_bins'][()].astype(np.float32)
+            self.missing_elements = table['/Bins/Missing_element'][()]
+            self.element_masses = table['Bins/Element_masses'][()].astype(np.float32)
 
+            self.density_bins = table['/Bins/Density_bins/'][()].astype(np.float32)
+            self.temperature_bins = table['/Bins/Temperature_bins/'][()].astype(np.float32)
+            self.redshift_bins = table['/Bins/Redshift_bins'][()].astype(np.float32)
 
+            self.log10_solar_metallicity = table['/Bins/Solar_metallicities/'][()].astype(np.float32)
+            self.solar_metallicity = np.power(10, self.log10_solar_metallicity)
 
         tables = {}
         for band in bands:
@@ -110,6 +140,7 @@ class XrayCalculator_LC:
                 tables[band][observing_type] = temp
 
         return tables
+
 
         
     @staticmethod
