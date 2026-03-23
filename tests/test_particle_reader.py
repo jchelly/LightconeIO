@@ -32,11 +32,12 @@ particle_z_min = 0.0
 particle_z_max = 15.0
 
 
-def test_lightcone_metadata(remote_dir):
+@pytest.mark.parametrize("filename", (particle_filename, virtual_filename))
+def test_lightcone_metadata(remote_dir, filename):
     """
     Check that we're reading metadata correctly
     """
-    lightcone = ParticleLightcone(particle_filename.format(file_nr=0), remote_dir=remote_dir)
+    lightcone = ParticleLightcone(filename.format(file_nr=0), remote_dir=remote_dir)
     assert set(lightcone) == set(particle_types)
 
     # Check we have the expected properties
