@@ -620,21 +620,6 @@ class ParticleLightcone(collections.abc.Mapping, LocalOrRemoteFile):
         # In MPI mode rank 0 reads the metadata and then we broadcast it
         if comm_rank == 0:
 
-            # Store base name so we can find the other files
-            m = re.match(r"(.*)\.[0-9]+\.hdf5", fname)
-            if m is not None:
-                basename = m.group(1)
-            else:
-                raise IOError("Unable to extract base name from filename: %s" % fname)
-
-            # Repeat for extra data files, if any
-            if extra_filename is not None:
-                m = re.match(r"(.*)\.[0-9]+\.hdf5", extra_filename)
-                if m is not None:
-                    extra_basename = m.group(1)
-                else:
-                    raise IOError("Unable to extract base name from filename: %s" % fname)
-
             with self.open_file(fname) as infile:
 
                 # Check that this file has indexing info: this class cannot be used to read the
@@ -662,15 +647,39 @@ class ParticleLightcone(collections.abc.Mapping, LocalOrRemoteFile):
                     nr_mpi_ranks = int(metadata["nr_mpi_ranks"])
 
                 # Find names of all of the lightcone files
-                filenames = []
-                for i in range(nr_mpi_ranks):
-                    filenames.append("%s.%d.hdf5" % (basename, i))
+                if nr_mpi_ranks == 1:
+                    # There's only one file, so it must be the one we opened.
+                    # This happens if we open a virtual file.
+                    filenames = [fname, ]
+                else:
+                    # There are multiple files. Here we have to assume a .X.hdf5 suffix.
+                    m = re.match(r"(.*)\.[0-9]+\.hdf5", fname)
+                    if m is not None:
+                        basename = m.group(1)
+                    else:
+                        raise IOError("Unable to extract base name from filename: %s" % fname)
+                    # Store all of the names
+                    filenames = []
+                    for i in range(nr_mpi_ranks):
+                        filenames.append("%s.%d.hdf5" % (basename, i))
 
                 # Find names of extra files
                 if extra_filename is not None:
-                    extra_filenames = []
-                    for i in range(nr_mpi_ranks):
-                        extra_filenames.append("%s.%d.hdf5" % (extra_basename, i))
+                    if nr_mpi_ranks == 1:
+                        # There's only one file, so it must be the one we opened.
+                        # This happens if we open a virtual file.
+                        extra_filenames = [extra_filename, ]
+                    else:
+                        # Extract base name of the extra files
+                        m = re.match(r"(.*)\.[0-9]+\.hdf5", extra_filename)
+                        if m is not None:
+                            extra_basename = m.group(1)
+                        else:
+                            raise IOError("Unable to extract base name from filename: %s" % fname)
+                        # Store all of the file names
+                        extra_filenames = []
+                        for i in range(nr_mpi_ranks):
+                            extra_filenames.append("%s.%d.hdf5" % (extra_basename, i))
                 else:
                     extra_filenames = None
 
