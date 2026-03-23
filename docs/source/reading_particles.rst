@@ -18,7 +18,7 @@ filesystem, you can open them as follows::
   import lightcone_io as lc
 
   # Specify the name of one of the lightcone particle files
-  filename = "./lightcones/lightcone0_particles/lightcone0_0000.0.hdf5"
+  filename = "./lightcones/lightcone0_particles/lightcone0_0000.hdf5"
 
   # Open the lightcone particle output
   lightcone = lc.ParticleLightcone(filename)
@@ -43,10 +43,36 @@ the server::
   import lightcone_io as lc
 
   # Location of one of the lightcone particle files relative to the remote directory
-  filename = "FLAMINGO/L1_m9/L1_m9/particle_lightcones/lightcone0_particles/lightcone0_0000.0.hdf5"
+  filename = "FLAMINGO/L1_m9/L1_m9/particle_lightcones/lightcone0_particles/lightcone0_0000.hdf5"
 
   # Open the lightcone particle output
   lightcone = lc.ParticleLightcone(filename, remote_dir=root)
+
+Meta (or "virtual") files
+-------------------------
+
+Lightcone particle outputs are typically split over many files with
+names along the lines of::
+
+  lightcone0_0000.0.hdf5
+  lightcone0_0000.1.hdf5
+  lightcone0_0000.2.hdf5
+  ...
+
+There may also be a meta-file without the ``.X.hdf5`` suffix, such
+as::
+
+  lightcone0_0000.hdf5
+
+This file contains HDF5 virtual datasets which reference all files in
+the set. When opening an output with
+:py:class:`lightcone_io.ParticleLightcone` we can pass in the name of
+the virtual file OR any one of the data files. In the latter case the
+code finds the other data files by assuming a consistent naming
+convention.
+
+This is similar to the `meta-file used in Swift snapshots
+<https://swift.strw.leidenuniv.nl/docs/Snapshots/index.html#meta-file-for-distributed-snapshots>`__.
 
 Lightcone particle metadata
 ---------------------------

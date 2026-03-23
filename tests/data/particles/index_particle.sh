@@ -34,3 +34,6 @@ mpirun -np 4 -- python3 -u -m mpi4py -m lightcone_io.index_particles \
        ${basedir} ${basename} ${nr_redshift_bins} ${nside} ${outdir} \
        --order ${order} --redshift-first --chunksize=128 \
        --types="BH"
+
+# Can generate virtual file with
+# python3 -m lightcone_io.virtual_particle_file ./ lightcone0 ./lightcone0_particles/lightcone0_0000.hdf5
