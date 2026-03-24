@@ -7,7 +7,9 @@ import unyt
 #
 UNIT_CONV_NO_UNITS = {"U_"+base_unit : 0 for base_unit in "MLtIT"}
 UNIT_CONV_PHOTON_FLUX_PER_UNIT_SURFACE = dict(UNIT_CONV_NO_UNITS, U_L=-2.0, U_t=-1.0)
-UNIT_CONV_ENERGY_FLUX_PER_UNIT_SURFACE = dict(UNIT_CONV_NO_UNITS, U_M=1.0, U_t=-3.0)
+UNIT_CONV_ENERGY_FLUX_PER_UNIT_SURFACE = dict(UNIT_CONV_NO_UNITS, U_M= 1.0, U_t=-3.0)
+UNIT_CONV_PHOTON_CONVOLVED_FLUX_PER_UNIT_SURFACE = dict(UNIT_CONV_NO_UNITS, U_t=-1.0)
+UNIT_CONV_ENERGY_CONVOLVED_FLUX_PER_UNIT_SURFACE = dict(UNIT_CONV_NO_UNITS, U_M=1.0, U_L=2.0, U_t=-3.0)
 missing_units = {
     "XrayErositaLowIntrinsicPhotons"   : UNIT_CONV_PHOTON_FLUX_PER_UNIT_SURFACE,
     "XrayErositaHighIntrinsicPhotons"  : UNIT_CONV_PHOTON_FLUX_PER_UNIT_SURFACE,
@@ -15,6 +17,12 @@ missing_units = {
     "XrayErositaLowIntrinsicEnergies"  : UNIT_CONV_ENERGY_FLUX_PER_UNIT_SURFACE,
     "XrayErositaHighIntrinsicEnergies" : UNIT_CONV_ENERGY_FLUX_PER_UNIT_SURFACE,
     "XrayROSATIntrinsicEnergies"       : UNIT_CONV_ENERGY_FLUX_PER_UNIT_SURFACE,
+    "XrayErositaLowConvolvedPhotons"   : UNIT_CONV_PHOTON_CONVOLVED_FLUX_PER_UNIT_SURFACE,
+    "XrayErositaHighConvolvedPhotons"  : UNIT_CONV_PHOTON_CONVOLVED_FLUX_PER_UNIT_SURFACE,
+    "XrayROSATConvolvedPhotons"        : UNIT_CONV_PHOTON_CONVOLVED_FLUX_PER_UNIT_SURFACE,
+    "XrayErositaLowConvolvedEnergies"  : UNIT_CONV_ENERGY_CONVOLVED_FLUX_PER_UNIT_SURFACE,
+    "XrayErositaHighConvolvedEnergies" : UNIT_CONV_ENERGY_CONVOLVED_FLUX_PER_UNIT_SURFACE,
+    "XrayROSATConvolvedEnergies"       : UNIT_CONV_ENERGY_CONVOLVED_FLUX_PER_UNIT_SURFACE,
 }
 
 # Name of attributes in InternalCodeUnits and Units groups

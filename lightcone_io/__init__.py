@@ -1,4 +1,4 @@
-__all__ = ["ShellArray", "Shell", "HealpixMap", "ParticleLightcone", "IndexedLightconeParticleType", "HaloLightconeFile"]
+__all__ = ["ShellArray", "Shell", "HealpixMap", "ParticleLightcone", "IndexedLightconeParticleType", "HaloLightconeFile", "XrayCalculator_LC", "Snapshot_Cosmology_For_Lightcone", "Xray_Filter"]
 
 # Use setuptools_scm to get version from git tags
 from importlib.metadata import version, PackageNotFoundError
@@ -16,3 +16,9 @@ from .healpix_maps import Shell, ShellArray, HealpixMap
 
 # Classes for reading halo lightcones
 from .halo_reader import HaloLightconeFile
+
+# Classes for computing X-ray values
+from .lc_xray_calculator import XrayCalculator_LC
+
+# Classes for using cosmology objects and filtering particles for X-rays
+from .xray_utils import Snapshot_Cosmology_For_Lightcone, Xray_Filter
