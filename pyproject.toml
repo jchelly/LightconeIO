@@ -18,7 +18,7 @@ dependencies = [
     "scipy",
     "tqdm",
     "pytest",
-    "hdfstream>=0.0.22",
+    "hdfstream>=0.0.28",
     "numba"
 ]
 readme = "README.md"
