@@ -19,6 +19,7 @@ dependencies = [
     "tqdm",
     "pytest",
     "hdfstream>=0.0.22",
+    "numba"
 ]
 readme = "README.md"
 classifiers = [
