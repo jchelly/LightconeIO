@@ -7,7 +7,7 @@ import healpy as hp
 import numpy as np
 import h5py
 import unyt
-
+import datetime as dt
 import lightcone_io.particle_reader as pr
 import lightcone_io.kernel as kernel
 
@@ -154,10 +154,28 @@ def create_empty_array(arr, comm):
         return arr
 
 
-def message(m):
+def message(m, show_time=False):
     comm.barrier()
     if comm_rank == 0:
+        
+        if show_time == True: # add current time to message
+            current_time=dt.datetime.now()
+            time_str=current_time.strftime("%H:%M:%S")
+            m="[{print_time}]\t".format(print_time=time_str)+m
         print(m)
+
+
+def rank_message(m, rank):
+    """
+    Print a new message on each rank.
+    No rank barrier as we want independant messages 
+    from each rank with time of arrival shown.
+    """
+    #comm.barrier()
+    current_time=dt.datetime.now()
+    time_str=current_time.strftime("%H:%M:%S")
+    print('\t[Rank {rank_nr:03d}] [@{print_time}]'.format(rank_nr=rank,print_time=time_str) + m)
+
 
 
 def distribute_pixels(comm, nside):
@@ -210,8 +228,60 @@ def distribute_pixels(comm, nside):
     return nr_total_pixels, nr_local_pixels, local_offset, theta_boundary
 
 
+def rotate_particle_coordinates(input_coords, theta, phi):
+    """ 
+    Params
+        input_coords (unyt array): the coordinates of particles within the 
+                                    lightcone shell [co-moving Mpc], as read 
+                                    from particle data of particle lightcone
+        theta, phi (unyt quantity): angles to rotate particle coordinates 
+                                    about [units=degree]
+
+    Returns
+        output_coords (unyt array): the particle coordiantes (input_coords) 
+                                    rotated on the sky via healpy rotator 
+                                    functions
+    """
+
+    chunk_size=65536 # from SWIFTSIMIO softenning length code, this seems to be a good value ??
+    number_of_parts=np.shape(input_coords)[0]
+    number_of_chunks=1+number_of_parts // chunk_size
+    
+    rotated_coordinates=unyt.unyt_array(
+        np.zeros((number_of_parts, 3), dtype=np.float64), 
+        units=input_coords.units)
+
+    def rotate_vec(coords, theta, phi):
+        
+        if (theta.value != 0.) or (phi.value != 0.):
+            rot_custom = hp.Rotator(
+            rot=[theta.to_value(unyt.deg), phi.to_value(unyt.deg)], 
+            inv=True, deg=True, eulertype='ZYX')
+            rot_matrix = rot_custom._matrix
+            output_arr=hp.rotator.rotateVector(
+                rot_matrix, 
+                vec=coords[:,0].value, vy=coords[:,1].value, vz=coords[:,-1].value).T
+            return output_arr
+        else:
+            return input_coords
+    
+    rank_message("rotating particles on the sky ({ang0:.3f}, {ang1:.3f})".format(ang0=theta, ang1=phi), comm_rank)
+    
+    for chunk in range(number_of_chunks):
+        start_id = chunk * chunk_size
+        end_id = (chunk+1) * chunk_size
+
+        if end_id > number_of_parts:
+            end_id = number_of_parts+1
+        if start_id >= end_id:
+            break
+
+        rotated_coordinates[start_id:end_id, :] = rotate_vec(input_coords[start_id:end_id, :], theta, phi)
+    
+    return rotated_coordinates
+
 def make_sky_map(input_filename, ptype, property_names, particle_value_function,
-                      zmin, zmax, nside, vector = None, radius = None, smooth=True, progress=False):
+                      zmin, zmax, nside, rot_theta=None, rot_phi=None, vector = None, radius = None, smooth=True, progress=False):
     """
     Make a new HEALPix map from lightcone particle data
 
@@ -224,6 +294,7 @@ def make_sky_map(input_filename, ptype, property_names, particle_value_function,
     zmax          : maximum redshift to use
     nside         : HEALPix resolution parameter
     smooth        : whether to smooth the map
+    rot_theta,rot_phi: angles to rotate particle coorinates on the sky [units=Degree]
     """
     
     if progress and comm_rank == 0:
@@ -231,14 +302,14 @@ def make_sky_map(input_filename, ptype, property_names, particle_value_function,
         progress_bar = tqdm
     else:
         progress_bar = lambda x: x
-
+    
     # Ensure property_names list contains coordinates and smoothing lengths
     property_names = list(property_names)
     if "Coordinates" not in property_names:
         property_names.append("Coordinates")
     if smooth and ("SmoothingLengths" not in property_names):
         property_names.append("SmoothingLengths")
-
+                          
     # Open the lightcone
     lightcone = pr.IndexedLightcone(input_filename, comm=comm)
 
@@ -262,8 +333,19 @@ def make_sky_map(input_filename, ptype, property_names, particle_value_function,
     nr_parts_tot = comm.allreduce(particle_data["Coordinates"].shape[0])
     message(f"Read in {nr_parts_tot} particles")
 
-    # Find the particle positions and smoothing lengths
-    part_pos_send = particle_data["Coordinates"]
+    # Find the particle positions and rotate if needed. 
+    if (rot_theta is None) and (rot_phi is None): 
+        part_pos_send = particle_data["Coordinates"] # no rotation 
+    else: 
+        # give rotation value of 0 degree if rotation angle is not given
+        if rot_theta is None:
+            rot_theta=0.*unyt.degree
+        if rot_phi is None:
+            rot_phi=0.*unyt.degree
+        # apply rotation to particle coordinates
+        part_pos_send = rotate_particle_coordinates(particle_data, rot_theta, rot_phi)
+
+    # Find Find the particle positions and smoothing lengths
     if smooth:
         part_hsml_send = find_angular_smoothing_length(part_pos_send, particle_data["SmoothingLengths"])
     else:
