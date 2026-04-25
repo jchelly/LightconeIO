@@ -6,7 +6,7 @@ import hashlib
 import numpy as np
 import h5py
 import unyt
-
+import healpy as hp
 import lightcone_io.units
 from lightcone_io.utils import LocalOrRemoteFile
 
