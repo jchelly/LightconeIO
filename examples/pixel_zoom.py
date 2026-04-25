@@ -2,10 +2,12 @@ import sys
 import numpy as np
 import healpy as hp
 import h5py
+import unyt
 import lightcone_io.healpix_maps as hm
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+
 
 def fetch_zoom_pixels(filename, centre_pixel_idx, pixel_idx, nside, map_name):
     """
