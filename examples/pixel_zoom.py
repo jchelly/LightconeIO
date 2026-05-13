@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 import matplotlib as mpl
 import cmasher as cmr
+from lightcone_io.units import units_from_attributes
 
 def plot_settings():
     """
@@ -87,31 +88,29 @@ def fetch_zoom_pixels(filename, centre_pixel_idx, pixel_idx, nside, map_name):
     
     if isinstance(pixel_idx, list):
         pixel_idx = np.asarray(pixel_idx).dtype(int)
-    
-    if isinstance(filename, str):
-        # assume string implies that the map is hdf5 object 
+    if isinstance(filename, str):# assume string implies that the map is hdf5 object 
         with h5py.File(filename, 'r') as f:
+            # define map array and units
+            map_units=units_from_attributes(f[map_name])
+            xmap = unyt.unyt_array(np.zeros(hp.nside2npix(nside)), units=map_units)
             if pixel_idx is None:
                 xmap += f[map_name][:]
-                centre_pix_val = f[map_name][centre_pixel_idx]
-                
+                centre_pix_val = f[map_name][centre_pixel_idx]*map_units
             else:
                 pixel_idx=pixel_idx[np.argsort(pixel_idx)].astype(int) # order and ensure correct type
                 xmap[pixel_idx]+=f[map_name][pixel_idx]
-    
-                centre_pix_val = f[map_name][centre_pixel_idx]
+                centre_pix_val = f[map_name][centre_pixel_idx]*map_units
 
-    elif isinstance(filename, hm.Shell):
-        #lightconeIO shell has been passed instead of string 
+    elif isinstance(filename, hm.Shell):#lightconeIO shell has been passed instead of string 
+        # define map array and units
+        xmap = unyt.unyt_array(np.zeros(hp.nside2npix(nside)), units=filename[map_name].units)
         if pixel_idx is None:
-             xmap += filename[map_name][:]
-             centre_pix_val = f[map_name][centre_pixel_idx]
+            xmap += filename[map_name][:]
+            centre_pix_val = f[map_name][centre_pixel_idx]* filename[map_name].units
         else:
             pixel_idx=pixel_idx[np.argsort(pixel_idx)].astype(int) # order and ensure correct type
-            xmap = unyt.unyt_array(np.zeros(hp.nside2npix(nside)), units=filename[map_name].units)
             xmap[pixel_idx]+=np.array([filename[map_name][n_idx:n_idx+1][0] for n_idx in pixel_idx])
             centre_pix_val = filename[map_name][centre_pixel_idx:centre_pixel_idx+1][0] * filename[map_name].units
-            #print(filename[map_name].units, xmap.units)
     return xmap, centre_pix_val
 
 def get_no_frac_latex(unit_obj):
