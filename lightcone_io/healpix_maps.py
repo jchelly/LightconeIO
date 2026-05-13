@@ -504,9 +504,9 @@ def get_children_ipix(ipix, nside, levels, ordering="ring"):
     ipix = np.atleast_1d(ipix)
 
     # Convert to nested ordering if needed
-    if ordering.upper() == "ring":
+    if ordering == "ring":
         ipix_nest = hp.ring2nest(nside, ipix)
-    elif ordering.upper() == 'nested':
+    elif ordering == 'nested':
         ipix_nest = ipix.copy()
     else:
         raise ValueError("did not recognise map ordering")
@@ -520,9 +520,9 @@ def get_children_ipix(ipix, nside, levels, ordering="ring"):
     print(nside_child)
 
     # Convert back to ring ordering if needed
-    if ordering.upper() == "ring":
+    if ordering == "ring":
         ipix_child = hp.nest2ring(nside_child, ipix_nest)
-    elif ordering.upper() == "nested":
+    elif ordering == "nested":
         ipix_child = ipix_nest
     else:
         raise ValueError("did not recognise map ordering")
