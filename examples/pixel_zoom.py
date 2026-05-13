@@ -84,7 +84,6 @@ def fetch_zoom_pixels(filename, centre_pixel_idx, pixel_idx, nside, map_name):
         Returns:
             An empty map aside from the selected pixels. 
     """
-    #make empty map:
     
     if isinstance(pixel_idx, list):
         pixel_idx = np.asarray(pixel_idx).dtype(int)
