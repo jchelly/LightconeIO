@@ -487,3 +487,44 @@ def get_map_names(fname):
             if isinstance(infile[name], h5py.Dataset):
                 map_names.append(name)
     return map_names
+
+
+def get_children_ipix(ipix, nside, levels, ordering="ring"):
+    """
+    Return the indices of the child pixels. 
+    i.e. find the indices of the pixels that make up the input pixel in a higher nside map. 
+
+    Params: 
+        ipix: the index of the pixel in a map
+        nside: nside of the map for the input pixel 
+        levels: the increase in resolution order from the input map to the map of the child pixels
+        ordering: the HEALPix map ordering, either 'ring' or 'nested'
+    """
+    # Ensure array
+    ipix = np.atleast_1d(ipix)
+
+    # Convert to nested ordering if needed
+    if ordering.upper() == "ring":
+        ipix_nest = hp.ring2nest(nside, ipix)
+    elif ordering.upper() == 'nested':
+        ipix_nest = ipix.copy()
+    else:
+        raise ValueError("did not recognise map ordering")
+
+    # Iterate map nside levels
+    for _ in range(levels):
+        ipix_nest = (4 * ipix_nest[:, None] + np.arange(4)).reshape(-1)
+
+    # Compute child pixel map nside
+    nside_child = nside * (2 ** levels)
+    print(nside_child)
+
+    # Convert back to ring ordering if needed
+    if ordering.upper() == "ring":
+        ipix_child = hp.nest2ring(nside_child, ipix_nest)
+    elif ordering.upper() == "nested":
+        ipix_child = ipix_nest
+    else:
+        raise ValueError("did not recognise map ordering")
+
+    return ipix_child
