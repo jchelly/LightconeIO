@@ -90,7 +90,7 @@ class XrayCalculator_LC:
             #min_idx_z = np.min(idx_z)
             min_idx_z = 0
             ############
-            max_idx_z = np.max(idx_z) + 2
+            max_idx_z = np.max(idx_z) + 2 if idx_z.size > 0 else min_idx_z + 2
 
             self.He_bins = table['Bins']['He_bins'].astype(np.float32)
             self.missing_elements = table['Bins']['Missing_element']
@@ -116,7 +116,7 @@ class XrayCalculator_LC:
             #min_idx_z = np.min(idx_z)
             min_idx_z = 0
             ############
-            max_idx_z = np.max(idx_z) + 2
+            max_idx_z = np.max(idx_z) + 2 if idx_z.size > 0 else min_idx_z + 2
 
             self.He_bins = table['/Bins/He_bins'][()].astype(np.float32)
             self.missing_elements = table['/Bins/Missing_element'][()]
