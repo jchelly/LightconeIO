@@ -126,6 +126,7 @@ def reindex_halos(snap_nr, input_lightcone_dir, lightcone_base,
         message("Computing index of each lightcone halo in SOAP")
         soap_index = psort.parallel_match(lightcone_trackid, soap_trackid, comm=comm)
         assert np.all(soap_index >= 0)
+        soap_index = psort.fetch_elements(soap_index, order, comm=comm)
         message("Writing soap index to halo lightcone")
         with h5py.File(output_filename, "r+", driver="mpio", comm=comm) as outfile:
             dataset = phdf5.collective_write(outfile, "InputHalos/SOAPIndex", soap_index, gzip=6, chunk=chunk_size, comm=comm)
